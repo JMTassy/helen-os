@@ -1,0 +1,60 @@
+🚀 DEPLOY HELEN OS IN 3 STEPS
+
+Step 1: Go to Railway.app
+─────────────────────────
+1. Open: https://railway.app
+2. Click "Start Project"
+3. Click "GitHub"
+4. Authorize Railway
+✅ Done - you have a Railway account
+
+Step 2: Create Railway API Token
+────────────────────────────────
+1. Go to: https://railway.app/account/tokens
+2. Click "Create New Token"
+3. Name it: "helen-os"
+4. Click "Create"
+5. Copy the token (you'll see a long string)
+✅ Token ready
+
+Step 3: Deploy (Pick ONE option)
+─────────────────────────────────
+
+OPTION A - Super Easy (Recommended for beginners)
+──────────────────────────────────────────────────
+1. Go to: https://railway.app/new?referralCode=railway
+2. Click "Deploy from GitHub repo"
+3. Search: "helen-os"
+4. Click it
+5. Click "Deploy"
+⏳ Wait 2-3 minutes
+✅ LIVE!
+
+OPTION B - Automatic Script (Advanced)
+───────────────────────────────────────
+In Terminal:
+
+    chmod +x deploy_railway.sh
+    ./deploy_railway.sh
+
+Then follow the prompts. Done!
+
+Step 4: Get Your URL
+────────────────────
+1. Go to: https://railway.app/dashboard
+2. Click "helen-os" project
+3. Go to "Deployments" tab
+4. Find the green ✓ deployment
+5. Look for "Railway Domain"
+6. Copy that URL!
+
+Example: https://helen-os-production.railway.app
+
+✅ YOUR HELEN OS IS NOW LIVE ON THE INTERNET!
+
+Test it:
+  https://your-url/health
+  https://your-url/models
+  https://your-url/status
+
+Done!
