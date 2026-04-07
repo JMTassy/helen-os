@@ -4,14 +4,8 @@
     "builder": "dockerfile"
   },
   "deploy": {
-    "startCommand": "gunicorn -w 4 -b 0.0.0.0:$PORT helen_os.api_server:create_app()",
+    "startCommand": "gunicorn --bind 0.0.0.0:$PORT --workers 1 app:app",
     "restartPolicyCondition": "on-failure",
     "restartPolicyMaxRetries": 5
-  },
-  "env": {
-    "PORT": {
-      "description": "Server port",
-      "value": "8000"
-    }
   }
 }
