@@ -34,13 +34,31 @@ PROVIDERS = {
         "base_url": "https://api.anthropic.com/v1/messages",
         "env_key": "ANTHROPIC_API_KEY",
         "model": "claude-sonnet-4-20250514",
+        "api_type": "anthropic",
         "strengths": ["reasoning", "analysis", "code", "writing", "constitutional"],
+    },
+    "gemma": {
+        "name": "Google Gemma 4 27B",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/models",
+        "env_key": "GOOGLE_API_KEY",
+        "model": "gemma-3-27b-it",
+        "api_type": "google_ai",
+        "strengths": ["open_weights", "reasoning", "math", "multilingual", "efficient"],
+    },
+    "gemini": {
+        "name": "Google Gemini",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/models",
+        "env_key": "GOOGLE_API_KEY",
+        "model": "gemini-2.0-flash",
+        "api_type": "google_ai",
+        "strengths": ["multimodal", "search", "reasoning", "long_context"],
     },
     "gpt": {
         "name": "OpenAI GPT",
         "base_url": "https://api.openai.com/v1/chat/completions",
         "env_key": "OPENAI_API_KEY",
         "model": "gpt-4o",
+        "api_type": "openai_compat",
         "strengths": ["general", "creative", "code", "conversation"],
     },
     "grok": {
@@ -48,28 +66,16 @@ PROVIDERS = {
         "base_url": "https://api.x.ai/v1/chat/completions",
         "env_key": "XAI_API_KEY",
         "model": "grok-3-latest",
+        "api_type": "openai_compat",
         "strengths": ["realtime", "humor", "analysis", "unfiltered"],
-    },
-    "gemini": {
-        "name": "Google Gemini",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/models",
-        "env_key": "GOOGLE_API_KEY",
-        "model": "gemini-2.0-flash",
-        "strengths": ["multimodal", "search", "reasoning", "long_context"],
     },
     "qwen": {
         "name": "Alibaba Qwen",
         "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
         "env_key": "QWEN_API_KEY",
         "model": "qwen-plus",
+        "api_type": "openai_compat",
         "strengths": ["multilingual", "math", "code", "chinese"],
-    },
-    "ollama": {
-        "name": "Ollama (Local)",
-        "base_url": "http://localhost:11434/api/chat",
-        "env_key": None,
-        "model": "mistral",
-        "strengths": ["local", "private", "offline", "fast"],
     },
 }
 
@@ -209,20 +215,24 @@ def score_object(obj):
 # Model router (non-sovereign: selects provider, does not decide truth)
 # ---------------------------------------------------------------------------
 TASK_ROUTING = {
+    # Claude: sovereign reasoning, analysis, code, writing
     "reason": "claude",
     "analyze": "claude",
     "code": "claude",
     "write": "claude",
-    "create": "gpt",
-    "imagine": "gpt",
-    "realtime": "grok",
-    "news": "grok",
+    "constitutional": "claude",
+    # Gemma 4 27B: math, multilingual, open reasoning
+    "math": "gemma",
+    "calculate": "gemma",
+    "translate": "gemma",
+    "create": "gemma",
+    "imagine": "gemma",
+    # Gemini fallback for search/multimodal
     "search": "gemini",
     "multimodal": "gemini",
-    "math": "qwen",
-    "translate": "qwen",
-    "local": "ollama",
-    "private": "ollama",
+    # GPT/Grok/Qwen remain available if keys configured
+    "realtime": "grok",
+    "news": "grok",
 }
 
 
@@ -238,8 +248,8 @@ def select_provider(message, preferred=None):
             if key is None or os.environ.get(key):
                 return provider
 
-    # Default cascade: claude > gpt > gemini > grok > qwen > ollama
-    for p in ["claude", "gpt", "gemini", "grok", "qwen", "ollama"]:
+    # Default cascade: claude > gemma > gemini > gpt > grok > qwen
+    for p in ["claude", "gemma", "gemini", "gpt", "grok", "qwen"]:
         key = PROVIDERS[p].get("env_key")
         if key is None or os.environ.get(key):
             return p
@@ -335,8 +345,8 @@ def call_openai_compat(message, provider_key, history=None):
         return None, str(e)
 
 
-def call_gemini(message, history=None):
-    """Call Google Gemini API."""
+def call_google_ai(message, provider_key, history=None):
+    """Call Google AI API (Gemini, Gemma, or any model on generativelanguage.googleapis.com)."""
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         return None, "GOOGLE_API_KEY not configured"
@@ -348,7 +358,7 @@ def call_gemini(message, history=None):
             contents.append({"role": role, "parts": [{"text": h["content"]}]})
     contents.append({"role": "user", "parts": [{"text": message}]})
 
-    model = PROVIDERS["gemini"]["model"]
+    model = PROVIDERS[provider_key]["model"]
     try:
         resp = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
@@ -357,28 +367,31 @@ def call_gemini(message, history=None):
                 "contents": contents,
                 "systemInstruction": {"parts": [{"text": HELEN_SYSTEM_PROMPT}]},
             },
-            timeout=30,
+            timeout=60,
         )
         data = resp.json()
         if "candidates" in data and len(data["candidates"]) > 0:
             parts = data["candidates"][0]["content"]["parts"]
             return parts[0]["text"], None
-        return None, str(data.get("error", "Unknown Gemini error"))
+        return None, str(data.get("error", f"Unknown {provider_key} error"))
     except Exception as e:
         return None, str(e)
 
 
 def call_provider(provider_key, message, history=None):
-    """Route to the correct provider call function."""
-    if provider_key == "claude":
+    """Route to the correct provider call function. Non-sovereign."""
+    cfg = PROVIDERS.get(provider_key)
+    if not cfg:
+        return None, f"Unknown provider: {provider_key}"
+
+    api_type = cfg.get("api_type", "")
+    if api_type == "anthropic":
         return call_claude(message, history)
-    elif provider_key == "gemini":
-        return call_gemini(message, history)
-    elif provider_key in ("gpt", "grok", "qwen"):
+    elif api_type == "google_ai":
+        return call_google_ai(message, provider_key, history)
+    elif api_type == "openai_compat":
         return call_openai_compat(message, provider_key, history)
-    elif provider_key == "ollama":
-        return None, "Ollama is local-only (not available on public API)"
-    return None, f"Unknown provider: {provider_key}"
+    return None, f"No API adapter for provider: {provider_key}"
 
 
 # ---------------------------------------------------------------------------
