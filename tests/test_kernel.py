@@ -194,7 +194,8 @@ class TestGovernorGates:
             assert governor(proposal, s0) == "PENDING", f"{action} should be PENDING"
 
     def test_normal_action_allow(self, s0):
-        for action in KNOWN_ACTIONS - WRITE_ACTIONS:
+        from helensh.kernel import GATED_ACTIONS
+        for action in KNOWN_ACTIONS - WRITE_ACTIONS - GATED_ACTIONS:
             proposal = {"action": action, "payload": {}, "authority": False}
             assert governor(proposal, s0) == "ALLOW", f"{action} should be ALLOW"
 
