@@ -143,6 +143,7 @@ Governor gates: Unknown → DENY | Authority → DENY | No capability → DENY |
 | I8 | StructuralAuthGuard | authority=True proposals never mutate state |
 | I9 | ReplayVerification | `rebuild_and_verify` passes on valid chains |
 | I10 | DenyPath | revoked cap → DENY → chained → no env effect |
+| I11 | TraceCompleteness | `∀t, (S_t, P_t, V_t, T_t) ⊆ R_t^exec.trace` (GNF) |
 | TMP | TamperDetection | mutated/deleted/forged ledger lines detected |
 
 ## Mutual Learning System (helen_mutual_learning.py)
@@ -166,8 +167,11 @@ Tests: `tests/test_agents.py` — 124 tests, all mocked (no Ollama needed)
 ## Bootstrap Seed
 
 - `helensh/SEED.txt` — v1 seed (bootstrap/build phase — historical)
-- `helensh/SEED_V2.txt` — v2 seed (operational phase — superseded)
-- `helensh/SEED_MASTER.txt` — **definitive master seed** (intent-first, governance-first, multimodal by delegation)
+- `helensh/SEED_V2.txt` — v2 seed (operational phase — superseded by v3)
+- `helensh/SEED_MASTER.txt` — kernel-only seed (F = E ∘ G ∘ C, receipt law, routing — subsumed by v3)
+- `helensh/SEED_OPERATOR.txt` — operator discipline seed (repo-first, eval-driven — subsumed by v3)
+- `helensh/SEED_PULL.txt` — Pull OS paradigm seed (five runtimes, state model, pull doctrine)
+- `helensh/SEED_V3.txt` — **DEFINITIVE UNIFIED SEED** (merges kernel law + pull doctrine + operator discipline)
 
 ## Key Design Constraints
 

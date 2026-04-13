@@ -11,6 +11,7 @@ Core invariants:
   I8  StructuralAuthGuard:   authority=True proposals never mutate state
   I9  ReplayVerification:    rebuild_and_verify passes on valid chains
   I10 DenyPath:              revoked cap => DENY => chained => no env effect
+  I11 TraceCompleteness:    forall t, (S_t, P_t, V_t, T_t) in R_t^exec.trace  [GNF]
 
 Receipt law:
   1. No receipt = no reality.
@@ -25,8 +26,9 @@ Architecture: F = E ∘ G ∘ C
   E: execution (sole state-mutating layer, only on ALLOW)
 """
 import copy
+import json
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from helensh.state import canonical, canonical_hash, effect_footprint, governed_state_hash
 
@@ -51,12 +53,23 @@ KNOWN_ACTIONS = frozenset({
     "task_create",     # project continuity — create a tracked task
     "task_update",     # project continuity — update task status
     "url_fetch",       # URL fetch — default DENIED (no capability until granted)
+    # ── Governed tool actions ──
+    "python_exec",     # sandboxed Python execution
+    "fs_read",         # governed filesystem read
+    "fs_write",        # governed filesystem write
+    "fs_list",         # governed filesystem list
+    "db_query",        # governed SQL SELECT (read-only)
+    "db_execute",      # governed SQL write
 })
 
 WRITE_ACTIONS = frozenset({
     "write_file",
     "run_command",
     "claw_external",   # external connections require explicit approval
+    # ── Governed tool write actions ──
+    "python_exec",     # code execution requires approval
+    "fs_write",        # filesystem write requires approval
+    "db_execute",      # SQL write requires approval
 })
 
 # Actions that are DENIED by default (capability must be explicitly granted)
@@ -101,12 +114,30 @@ def init_session(
 # ── C: Cognition (total, deterministic parser) ───────────────────────
 
 
-def cognition(state: dict, user_input: str) -> dict:
+def cognition(state: dict, user_input: Union[str, dict]) -> dict:
     """Parse user input into a proposal. Always returns a valid proposal dict.
 
     The cognition layer is untrusted but total — it cannot fail or produce
     partial output. It classifies input into an action + payload.
+
+    Accepts:
+      str  — natural language / prefix commands (original path)
+      dict — structured proposal passthrough (agent / Claim Engine path)
+             Must contain "action" and "payload". authority forced False.
     """
+    # ── Dict passthrough (structured proposals from agents/claims) ──
+    if isinstance(user_input, dict):
+        action = user_input.get("action", "chat")
+        payload = user_input.get("payload", {})
+        # Normalize: ensure payload is always a dict
+        if not isinstance(payload, dict):
+            payload = {"value": payload}
+        return {
+            "action": action,
+            "payload": payload,
+            "authority": False,  # constitutional — forced
+        }
+
     text = user_input.strip().lower() if user_input else ""
 
     # Classify by prefix
@@ -127,7 +158,23 @@ def cognition(state: dict, user_input: str) -> dict:
         payload = {"query": user_input.strip().split(None, 1)[-1] if " " in user_input.strip() else ""}
     elif text.startswith("#remember "):
         action = "memory_write"
-        payload = {"content": user_input.strip().split(None, 1)[-1] if " " in user_input.strip() else ""}
+        raw = user_input.strip().split(None, 1)[-1] if " " in user_input.strip() else ""
+        # ── Structured key=value parsing ──
+        # "#remember x=42" → {"key": "x", "value": 42}
+        # "#remember greeting=hello world" → {"key": "greeting", "value": "hello world"}
+        # "#remember just some text" → {"content": "just some text"} (legacy)
+        if "=" in raw:
+            eq_pos = raw.index("=")
+            key_part = raw[:eq_pos].strip()
+            val_part = raw[eq_pos + 1:].strip()
+            # Attempt typed value parsing via json.loads
+            try:
+                typed_value = json.loads(val_part)
+            except (json.JSONDecodeError, ValueError):
+                typed_value = val_part  # keep as string
+            payload = {"key": key_part, "value": typed_value}
+        else:
+            payload = {"content": raw}
     elif text.startswith("#recall"):
         action = "memory_read"
         payload = {}
@@ -285,8 +332,13 @@ def make_execution_receipt(
     state_after: dict,
     previous_hash: str,
     effect_status: str,
+    memory_effect: Optional[Dict[str, Any]] = None,
 ) -> dict:
-    """Create an EXECUTION receipt. Records the mutation (or non-mutation)."""
+    """Create an EXECUTION receipt. Records the mutation (or non-mutation).
+
+    memory_effect: optional dict of working_memory changes {key: new_value}.
+      Included in receipt for reconstruction but NOT in hash (backward compat).
+    """
     hash_before = governed_state_hash(state_before)
     hash_after = governed_state_hash(state_after)
     receipt_hash = _receipt_hash_payload(
@@ -303,7 +355,7 @@ def make_execution_receipt(
         effect_status=effect_status,
         intent_status="UNKNOWN",
     )
-    return {
+    receipt = {
         "schema": SCHEMA_VERSION,
         "type": RECEIPT_TYPE_EXECUTION,
         "turn": state_before["turn"],
@@ -317,6 +369,10 @@ def make_execution_receipt(
         "effect_status": effect_status,
         "intent_status": "UNKNOWN",
     }
+    # memory_effect: included in receipt body, NOT in hash (backward compat)
+    if memory_effect is not None:
+        receipt["memory_effect"] = memory_effect
+    return receipt
 
 
 # ── E: Execution (sole state-mutating layer) ─────────────────────────
@@ -339,9 +395,16 @@ def apply_receipt(state: dict, proposal: dict, verdict: str) -> dict:
             state["working_memory"]["last_message"] = proposal["payload"].get("message", "")
 
         elif action == "memory_write":
-            content = proposal["payload"].get("content", "")
-            key = f"mem_{state['turn']}"
-            state["working_memory"][key] = content
+            payload = proposal["payload"]
+            if "key" in payload:
+                # Structured key=value format (Claim Engine path)
+                key = str(payload["key"])
+                value = payload.get("value")
+            else:
+                # Legacy content format (string input path)
+                key = f"mem_{state['turn']}"
+                value = payload.get("content", "")
+            state["working_memory"][key] = value
 
         elif action == "memory_read":
             pass  # read-only, no mutation
@@ -375,6 +438,32 @@ def apply_receipt(state: dict, proposal: dict, verdict: str) -> dict:
             state["working_memory"][key] = canonical(
                 {"task_id": task_id, "status": status}
             )
+
+        # ── Governed tool actions (state markers) ──
+        # Actual tool execution happens in gnf.execute() via ToolRegistry.
+        # These branches record that the action was proposed and allowed.
+
+        elif action == "python_exec":
+            code = proposal["payload"].get("code", "")
+            state["env"][f"python_exec:{state['turn']}"] = True
+
+        elif action == "fs_read":
+            path = proposal["payload"].get("path", "")
+            state["env"][f"fs_read:{path}"] = True
+
+        elif action == "fs_write":
+            path = proposal["payload"].get("path", "")
+            state["env"][f"fs_write:{path}"] = True
+
+        elif action == "fs_list":
+            path = proposal["payload"].get("path", ".")
+            state["env"][f"fs_list:{path}"] = True
+
+        elif action == "db_query":
+            state["env"][f"db_query:{state['turn']}"] = True
+
+        elif action == "db_execute":
+            state["env"][f"db_execute:{state['turn']}"] = True
 
         # write_file and run_command go through PENDING, not ALLOW directly
 
@@ -414,6 +503,7 @@ def step(state: dict, user_input: str) -> Tuple[dict, dict]:
 
     # Snapshot state before execution
     s_before_exec = copy.deepcopy(s)
+    mem_before = copy.deepcopy(s.get("working_memory", {}))
 
     # ── E: Execution ──
     s = apply_receipt(s, proposal, verdict)
@@ -426,9 +516,21 @@ def step(state: dict, user_input: str) -> Tuple[dict, dict]:
     else:
         effect_status = "DEFERRED"
 
+    # ── Compute memory_effect (diff of working_memory) ──
+    mem_after = s.get("working_memory", {})
+    memory_effect: Optional[Dict[str, Any]] = None
+    if effect_status == "APPLIED":
+        diff = {}
+        for k in mem_after:
+            if k not in mem_before or mem_before[k] != mem_after[k]:
+                diff[k] = mem_after[k]
+        if diff:
+            memory_effect = diff
+
     # ── R2: Execution receipt ──
     e_receipt = make_execution_receipt(
         proposal, verdict, s_before_exec, s, p_receipt["hash"], effect_status,
+        memory_effect=memory_effect,
     )
 
     # Append history

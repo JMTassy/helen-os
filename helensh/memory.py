@@ -47,9 +47,17 @@ def reconstruct_memory(receipts: List[Dict[str, Any]]) -> Dict[str, Any]:
     Only EXECUTION receipts with effect_status == "APPLIED" can contribute.
     This mirrors the exact mutations in kernel.apply_receipt().
 
+    Reconstruction priority:
+      1. If receipt has "memory_effect" dict → apply it directly (authoritative)
+      2. Otherwise → derive from proposal (legacy backward-compat path)
+
     Memory reconstruction rules (matching kernel.py apply_receipt):
       - chat:         working_memory["last_message"] = payload.message
-      - memory_write: working_memory["mem_{turn}"]   = payload.content
+      - memory_write: working_memory[key] = value  (key/value format)
+                   or working_memory["mem_{turn}"] = content  (legacy format)
+      - witness:      working_memory["witness_{turn}"] = content
+      - task_create:  working_memory["task_{turn}"] = canonical({task_id, goal, status})
+      - task_update:  working_memory["task_update_{turn}"] = canonical({task_id, status})
 
     All other actions produce no memory mutation.
     """
@@ -61,6 +69,13 @@ def reconstruct_memory(receipts: List[Dict[str, Any]]) -> Dict[str, Any]:
         if r.get("effect_status") != "APPLIED":
             continue
 
+        # ── Priority 1: memory_effect (authoritative, from step()) ──
+        mem_effect = r.get("memory_effect")
+        if mem_effect is not None and isinstance(mem_effect, dict):
+            memory.update(mem_effect)
+            continue
+
+        # ── Priority 2: derive from proposal (legacy path) ──
         proposal = r.get("proposal", {})
         action = proposal.get("action", "")
         payload = proposal.get("payload", {})
@@ -71,9 +86,15 @@ def reconstruct_memory(receipts: List[Dict[str, Any]]) -> Dict[str, Any]:
             memory["last_message"] = message
 
         elif action == "memory_write":
-            content = payload.get("content", "")
-            key = f"mem_{turn}"
-            memory[key] = content
+            if "key" in payload:
+                # Structured key=value format
+                key = str(payload["key"])
+                value = payload.get("value")
+            else:
+                # Legacy content format
+                key = f"mem_{turn}"
+                value = payload.get("content", "")
+            memory[key] = value
 
         elif action == "witness":
             content = payload.get("content", "")
@@ -174,10 +195,22 @@ def memory_provenance(
         payload = proposal.get("payload", {})
         turn = r.get("turn", 0)
 
+        # ── Check memory_effect first (authoritative) ──
+        mem_effect = r.get("memory_effect")
+        if mem_effect is not None and isinstance(mem_effect, dict):
+            if key in mem_effect:
+                result = r
+            continue
+
         if action == "chat" and key == "last_message":
             result = r
-        elif action == "memory_write" and key == f"mem_{turn}":
-            result = r
+        elif action == "memory_write":
+            # Match both structured key=value and legacy mem_{turn} formats
+            payload = proposal.get("payload", {})
+            if "key" in payload and str(payload["key"]) == key:
+                result = r
+            elif key == f"mem_{turn}":
+                result = r
         elif action == "witness" and key == f"witness_{turn}":
             result = r
         elif action == "task_create" and key == f"task_{turn}":
@@ -223,12 +256,23 @@ def _find_contributing_receipts(
         action = proposal.get("action", "")
         turn = r.get("turn", 0)
 
+        # ── Check memory_effect first (authoritative) ──
+        mem_effect = r.get("memory_effect")
+        if mem_effect is not None and isinstance(mem_effect, dict):
+            if any(k in mem_effect for k in keys):
+                contributing.append(r.get("hash", ""))
+            continue
+
         # Determine which key this receipt writes to
         writes_to: Optional[str] = None
         if action == "chat":
             writes_to = "last_message"
         elif action == "memory_write":
-            writes_to = f"mem_{turn}"
+            payload = proposal.get("payload", {})
+            if "key" in payload:
+                writes_to = str(payload["key"])
+            else:
+                writes_to = f"mem_{turn}"
         elif action == "witness":
             writes_to = f"witness_{turn}"
         elif action == "task_create":
