@@ -1,6 +1,6 @@
 """HELEN OS — CLAW Skills Agent.
 
-CLAW handles external connections: Telegram, web fetch, notifications.
+CLAW handles external connections: Telegram, web fetch, notifications, MCP, computer-use.
 
 Design constraints:
   - require_approval=True always (ClawAction never self-executes)
@@ -8,9 +8,12 @@ Design constraints:
   - `claw_external` is the kernel action type (added to KNOWN_ACTIONS + WRITE_ACTIONS)
   - all planned actions are receipted proposals; CLAW never directly mutates state
   - authority: False always enforced
+  - OpenClaw model (ollama: openclaw) used for intelligent skill planning when available
 """
 from __future__ import annotations
 
+import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional

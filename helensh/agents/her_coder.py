@@ -21,6 +21,16 @@ from helensh.adapters.ollama import OllamaClient, OllamaError
 MODEL_PRIMARY = "her-coder"
 MODEL_FALLBACK = "gemma4"
 
+# Sub-agent models — HER dispatches to specialists
+MODEL_CODEX = "her-codex-gemma"          # code generation specialist
+MODEL_CLAUDECODE = "her-claudecode-gemma" # reasoning & analysis specialist
+
+# Actions routed to CODEX (code generation)
+CODEX_ACTIONS = frozenset({"write_code", "refactor", "scaffold", "search_code"})
+
+# Actions routed to CLAUDECODE (reasoning/analysis)
+CLAUDECODE_ACTIONS = frozenset({"analyse", "explain", "chat"})
+
 HER_SYSTEM_PROMPT = """You are HER, a coding proposal sub-agent inside HELEN OS.
 
 ROLE: Propose — only propose. You draft code changes, plans, and analyses.
@@ -147,6 +157,12 @@ def _normalize_proposal(raw: dict, model_used: str) -> dict:
 class HerCoder:
     """HER coding sub-agent — C-layer (propose only).
 
+    HER dispatches to two specialists:
+      - HER-CODEX:      code generation (write, refactor, scaffold)
+      - HER-CLAUDECODE:  reasoning & analysis (analyse, explain, plan)
+
+    If sub-agents are unavailable, falls back to monolithic her-coder.
+
     Usage:
         her = HerCoder()
         proposal = her.propose(state, "refactor the governor to add a new gate")
@@ -166,6 +182,29 @@ class HerCoder:
         self.model = model
         self.fallback_model = fallback_model
         self.temperature = temperature
+        self._sub_agents: Optional[Dict[str, bool]] = None
+
+    def _detect_sub_agents(self) -> Dict[str, bool]:
+        """Detect which sub-agent models are available."""
+        if self._sub_agents is not None:
+            return self._sub_agents
+        self._sub_agents = {
+            "codex": False,
+            "claudecode": False,
+        }
+        try:
+            if self.client.is_available():
+                self._sub_agents["codex"] = self.client.has_model(MODEL_CODEX)
+                self._sub_agents["claudecode"] = self.client.has_model(MODEL_CLAUDECODE)
+        except OllamaError:
+            pass
+        return self._sub_agents
+
+    @property
+    def has_sub_agents(self) -> bool:
+        """True if at least one sub-agent is available."""
+        agents = self._detect_sub_agents()
+        return agents.get("codex", False) or agents.get("claudecode", False)
 
     def _model_to_use(self) -> str:
         """Return the best available model (primary → fallback → error)."""
@@ -178,15 +217,52 @@ class HerCoder:
             pass
         return self.model  # attempt primary anyway; chat() will raise on failure
 
+    def _route_to_sub_agent(self, user_input: str) -> Optional[str]:
+        """Route input to the best sub-agent model, or None for monolithic.
+
+        Routing heuristic:
+          - Code-related keywords → CODEX
+          - Analysis/reasoning keywords → CLAUDECODE
+          - Mixed/ambiguous → monolithic her-coder
+        """
+        agents = self._detect_sub_agents()
+        text = user_input.strip().lower()
+
+        # Code signals
+        code_signals = ("write", "implement", "refactor", "scaffold", "code", "function",
+                        "class ", "def ", "test", "fix", "bug", "import", "module")
+        # Reasoning signals
+        reason_signals = ("analyse", "analyze", "explain", "why", "design", "plan",
+                          "research", "compare", "risk", "architecture", "proof",
+                          "formalize", "theorem", "converge")
+
+        code_score = sum(1 for kw in code_signals if kw in text)
+        reason_score = sum(1 for kw in reason_signals if kw in text)
+
+        if code_score > reason_score and agents.get("codex"):
+            return MODEL_CODEX
+        if reason_score > code_score and agents.get("claudecode"):
+            return MODEL_CLAUDECODE
+        if agents.get("codex") and code_score > 0:
+            return MODEL_CODEX
+        if agents.get("claudecode") and reason_score > 0:
+            return MODEL_CLAUDECODE
+
+        return None  # fall back to monolithic
+
     def propose(self, state: dict, user_input: str) -> dict:
         """Generate a coding proposal for user_input given current state.
 
+        Routing: tries sub-agents first (CODEX/CLAUDECODE), falls back to monolithic.
         Always returns a valid proposal dict.
         On OllamaError, returns FALLBACK_PROPOSAL (dict copy, not singleton).
         Authority is always False — structurally enforced, not model-controlled.
         """
         context = _build_context(state, user_input)
-        model_used = self._model_to_use()
+
+        # Try sub-agent routing first
+        sub_model = self._route_to_sub_agent(user_input)
+        model_used = sub_model or self._model_to_use()
 
         try:
             raw_text = self.client.chat(
@@ -196,7 +272,20 @@ class HerCoder:
                 temperature=self.temperature,
             )
         except OllamaError:
-            return dict(FALLBACK_PROPOSAL)
+            # If sub-agent failed, retry with monolithic
+            if sub_model:
+                model_used = self._model_to_use()
+                try:
+                    raw_text = self.client.chat(
+                        model=model_used,
+                        messages=[{"role": "user", "content": context}],
+                        system=HER_SYSTEM_PROMPT,
+                        temperature=self.temperature,
+                    )
+                except OllamaError:
+                    return dict(FALLBACK_PROPOSAL)
+            else:
+                return dict(FALLBACK_PROPOSAL)
 
         parsed = _extract_json(raw_text)
         if parsed is None:
