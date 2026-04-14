@@ -1277,6 +1277,67 @@ def last_session():
 # Boot
 # ---------------------------------------------------------------------------
 
+def seed_working_context():
+    """Seed threads, committed memory, and a session on fresh DB.
+    Railway uses ephemeral storage — SQLite resets each deploy.
+    This ensures /init always returns real working context."""
+    from helen_os.memory import (
+        create_thread, get_active_threads,
+        add_memory_item, get_memory_items,
+        open_session, close_session,
+    )
+
+    # Only seed if no threads exist yet
+    if get_active_threads(limit=1):
+        return
+
+    print("[HELEN BOOT] Seeding working context for /init...", flush=True)
+
+    # --- Threads ---
+    threads = [
+        ("helen-os-api", "HELEN OS Public API", "committed",
+         "19 endpoints live on Railway", None, "Add ANTHROPIC_API_KEY to Railway Variables"),
+        ("helen-memory-spine", "Memory Spine + Three Classes", "committed",
+         "SQLite with corpus, threads, memory_items, sessions, mutation_log",
+         None, "Migrate to persistent storage (Railway volume or Postgres)"),
+        ("airi-companion", "AIRI Companion Client", "committed",
+         "Browser client at /airi with context drawer + district switching",
+         None, "Connect local AIRI to Railway endpoint"),
+        ("conquest-oracle-town", "CONQUEST Oracle Town", "working",
+         "44-card Oracle deck, 9 CHRONOS guards, territory/joute/federation",
+         "Formal verification of guard properties", "Continue Coq proofs"),
+        ("autoresearch", "Autoresearch Campaign", "working",
+         "E1-E23 complete, 262+ tests, failure taxonomy, representation v2",
+         "Context store architecture", "Design E24 epoch"),
+        ("temple-doctrine", "Temple Five-Role Architecture", "committed",
+         "AURA/HER/HAL/CHRONOS/MAYOR, all authority=NONE",
+         None, "Integrate Temple routing into chat responses"),
+        ("product-wedge", "Product Wedge: /init beats notes", "working",
+         "7-day test period starting", None,
+         "Use HELEN daily, compare /init vs notes after interruption"),
+    ]
+    for tid, title, mc, state, unresolved, next_act in threads:
+        create_thread(tid, title, memory_class=mc, current_state=state,
+                      unresolved=unresolved, next_action=next_act)
+
+    # --- Committed Memory Items ---
+    memory_items = [
+        ("jm-identity", "JM is a 20yr digital engineer who loves maths and innovation"),
+        ("helen-constitutional", "Provider output is never sovereign. Only reducer-authorized decisions mutate governed state"),
+        ("memory-classes", "Three memory classes: reflection (speculative), working (active), committed (stable/resumable)"),
+        ("authority-none", "All HELEN outputs carry authority=NONE. No role may claim truth or decide readiness alone"),
+        ("product-wedge-goal", "/init HELEN must restore real working context better than notes after interruption"),
+    ]
+    for mid, text in memory_items:
+        add_memory_item(mid, text, memory_class="committed", source="SYSTEM")
+
+    # --- Seed session ---
+    open_session("boot-session")
+    close_session("boot-session", summary="Boot seed: 7 threads, 5 committed items created")
+
+    print(f"[HELEN BOOT] Seeded {len(threads)} threads, {len(memory_items)} memory items", flush=True)
+
+
 def bootstrap():
     """Initialize memory spine and seed corpus on first boot."""
     init_db()
@@ -1286,6 +1347,7 @@ def bootstrap():
         print(f"Seeded {corpus_count()} corpus objects.")
     else:
         print(f"Memory spine online: {corpus_count()} corpus objects.")
+    seed_working_context()
 
 
 # Initialize on import (for gunicorn/Railway)
