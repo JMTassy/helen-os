@@ -1322,14 +1322,14 @@ def seed_working_context():
 
     # --- Committed Memory Items ---
     memory_items = [
-        ("jm-identity", "JM is a 20yr digital engineer who loves maths and innovation"),
-        ("helen-constitutional", "Provider output is never sovereign. Only reducer-authorized decisions mutate governed state"),
-        ("memory-classes", "Three memory classes: reflection (speculative), working (active), committed (stable/resumable)"),
-        ("authority-none", "All HELEN outputs carry authority=NONE. No role may claim truth or decide readiness alone"),
-        ("product-wedge-goal", "/init HELEN must restore real working context better than notes after interruption"),
+        "JM is a 20yr digital engineer who loves maths and innovation",
+        "Provider output is never sovereign. Only reducer-authorized decisions mutate governed state",
+        "Three memory classes: reflection (speculative), working (active), committed (stable/resumable)",
+        "All HELEN outputs carry authority=NONE. No role may claim truth or decide readiness alone",
+        "/init HELEN must restore real working context better than notes after interruption",
     ]
-    for mid, text in memory_items:
-        add_memory_item(mid, text, memory_class="committed", source="SYSTEM")
+    for text in memory_items:
+        add_memory_item(text, memory_class="committed", source="SYSTEM")
 
     # --- Seed session ---
     open_session("boot-session")
