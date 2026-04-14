@@ -6,10 +6,12 @@ POST /api/chat              — governed chat (HELEN CITY API compat)
 POST /v1/chat/completions  — OpenAI-compat (AIRI frontend uses this)
 GET  /v1/models             — model list for AIRI settings
 GET  /api/health            — liveness probe
+GET  /api/mesh              — EGREGOR mesh status (streets + available models)
 
 Law:
   - All responses: authority=NONE, non_sovereign=True
-  - Ollama-backed when available, graceful fallback when busy
+  - Routed through EGREGOR model mesh (33 specialist LLMs)
+  - Graceful fallback when Ollama busy
   - No response may claim sovereignty or modify governed state
 """
 from __future__ import annotations
@@ -25,6 +27,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+
+from helensh.egregor.mesh import (
+    classify_task,
+    mesh_call,
+    mesh_available_models,
+    _instant_fallback,
+    STREETS,
+)
 
 # ── Ollama config ─────────────────────────────────────────────────────────────
 
@@ -263,28 +273,44 @@ async def health() -> Dict[str, Any]:
     }
 
 
+@app.get("/api/mesh")
+async def mesh_status() -> Dict[str, Any]:
+    """EGREGOR mesh status — all streets and available models."""
+    streets = mesh_available_models()
+    total_available = sum(s["online"] for s in streets.values())
+    return {
+        "status": "alive",
+        "egregor": "active",
+        "streets": streets,
+        "total_streets": len(streets),
+        "total_models_available": total_available,
+        "authority": "NONE",
+        "non_sovereign": True,
+        "timestamp": int(time.time()),
+    }
+
+
 @app.post("/api/chat")
 async def chat(req: ChatRequest) -> Dict[str, Any]:
-    """Governed chat endpoint. Called by HELEN CITY API at 8000."""
-    model = _available_model()
+    """Governed chat endpoint — routes through EGREGOR model mesh."""
     system = (req.system or HELEN_SYSTEM) + _mode_suffix(req.mode)
-    messages = _build_messages(req.history, req.message)
+    history_dicts = [{"role": h.get("role", "user"), "content": h.get("content", "")} for h in req.history]
 
-    result: dict = {}
-    t = threading.Thread(target=_call_ollama_in_thread, args=(model, system, messages, result))
-    t.start()
-    t.join(timeout=TIMEOUT)
-
-    if result.get("ok"):
-        response = result["response"]
-    else:
-        response = f"[HELEN — {result.get('error', 'Ollama busy, try again shortly')}]"
+    mesh_result = mesh_call(
+        message=req.message,
+        history=history_dicts,
+        system=system,
+        mode=req.mode,
+        timeout=28,
+    )
 
     return {
-        "response": response,
-        "model": model,
+        "response": mesh_result.text,
+        "model": mesh_result.model,
+        "street": mesh_result.street,
         "mode": req.mode,
         "channel": req.channel,
+        "fallback": mesh_result.fallback,
         "authority": "NONE",
         "non_sovereign": True,
         "kernel": "helen-kernel-v1",
@@ -320,7 +346,7 @@ async def openai_chat(request: Request) -> Any:
     """OpenAI-compatible chat completions endpoint.
 
     AIRI frontend sends requests here. Supports both streaming and non-streaming.
-    Routes through Ollama with graceful fallback.
+    Routes through EGREGOR model mesh (33 specialist LLMs, smart fallback).
     """
     body = await request.json()
     messages_raw: List[Dict] = body.get("messages", [])
@@ -345,44 +371,31 @@ async def openai_chat(request: Request) -> Any:
     # Remove last user message from history (it's the current message)
     hist_trimmed = history[:-1] if history and history[-1]["role"] == "user" else history
 
-    ollama_model = _available_model()
-    ollama_msgs = [{"role": "system", "content": system}] + hist_trimmed + [{"role": "user", "content": user_msg}]
-
     cid = f"chatcmpl-{uuid.uuid4().hex[:12]}"
 
     if stream:
         def generate():
-            # Try Ollama with a 25-second budget; fall back instantly if busy
-            result: dict = {}
-            payload = json.dumps({
-                "model": ollama_model,
-                "messages": ollama_msgs,
-                "stream": False,
-                "options": {"temperature": 0.7, "num_predict": 300},
-            }).encode()
+            # Route through EGREGOR mesh in background thread
+            mesh_result_holder: dict = {}
 
-            def _fetch():
-                try:
-                    req = urllib.request.Request(
-                        f"{OLLAMA_BASE}/v1/chat/completions",
-                        data=payload,
-                        headers={"Content-Type": "application/json"},
-                        method="POST",
-                    )
-                    with urllib.request.urlopen(req, timeout=25) as r:
-                        data = json.loads(r.read())
-                    result["text"] = data["choices"][0]["message"]["content"].strip()
-                    result["ok"] = True
-                except Exception as e:
-                    result["text"] = None
-                    result["ok"] = False
+            def _mesh_fetch():
+                res = mesh_call(
+                    message=user_msg,
+                    history=hist_trimmed,
+                    system=system,
+                    mode="companion",
+                    timeout=25,
+                )
+                mesh_result_holder["result"] = res
 
-            t = threading.Thread(target=_fetch, daemon=True)
+            t = threading.Thread(target=_mesh_fetch, daemon=True)
             t.start()
             t.join(timeout=28)
 
-            # If Ollama responded, use it; else use smart fallback
-            text = result.get("text") or _smart_fallback(user_msg, "companion")
+            res = mesh_result_holder.get("result")
+            text = res.text if res else _instant_fallback(user_msg, "companion")
+            routed_model = res.model if res else "fallback"
+
             words = text.split(" ")
             for i, word in enumerate(words):
                 token = word + (" " if i < len(words) - 1 else "")
@@ -390,14 +403,14 @@ async def openai_chat(request: Request) -> Any:
                     "id": cid,
                     "object": "chat.completion.chunk",
                     "created": int(time.time()),
-                    "model": model,
+                    "model": routed_model,
                     "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": None}],
                 }
                 yield f"data: {json.dumps(chunk)}\n\n"
 
             stop = {
                 "id": cid, "object": "chat.completion.chunk",
-                "created": int(time.time()), "model": model,
+                "created": int(time.time()), "model": routed_model,
                 "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
             }
             yield f"data: {json.dumps(stop)}\n\n"
@@ -414,19 +427,22 @@ async def openai_chat(request: Request) -> Any:
         )
 
     else:
-        # Non-streaming — 25s budget, then smart fallback
-        result: dict = {}
-        t = threading.Thread(target=_call_ollama_in_thread, args=(ollama_model, system, ollama_msgs[1:], result), daemon=True)
-        t.start()
-        t.join(timeout=28)
-
-        content = result.get("response") or _smart_fallback(user_msg, "companion")
+        # Non-streaming — route through EGREGOR mesh
+        mesh_res = mesh_call(
+            message=user_msg,
+            history=hist_trimmed,
+            system=system,
+            mode="companion",
+            timeout=28,
+        )
+        content = mesh_res.text
+        routed_model = mesh_res.model
 
         return JSONResponse({
             "id": cid,
             "object": "chat.completion",
             "created": int(time.time()),
-            "model": model,
+            "model": routed_model,
             "choices": [{
                 "index": 0,
                 "message": {"role": "assistant", "content": content},
@@ -435,6 +451,10 @@ async def openai_chat(request: Request) -> Any:
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
             "authority": "NONE",
             "non_sovereign": True,
+            "egregor": {
+                "street": mesh_res.street,
+                "fallback": mesh_res.fallback,
+            },
         })
 
 
@@ -447,5 +467,7 @@ async def kernel_info() -> Dict[str, Any]:
         "sovereignty_class": "SOVEREIGN_FOUNDATION",
         "authority": "REDUCER",
         "model": _available_model(),
+        "egregor": "active",
+        "streets": list(STREETS.keys()),
         "note": "Kernel Citadel. Constitutional boundary. Non-sovereign output only.",
     }
