@@ -498,6 +498,13 @@ def index():
             "GET /temple/aura": "AURA perception — inadmissible beauty layer (?object=...)",
             "GET /temple/roles": "All five Temple role definitions",
             "GET /ui": "HELEN buddy web interface",
+            "POST /v1/chat/completions": "OpenAI-compatible chat (for AIRI/external clients)",
+            "GET /v1/models": "Available HELEN models (OpenAI format)",
+            "GET /threads": "Active work threads",
+            "POST /threads": "Create thread",
+            "GET /memory/items": "Memory items (reflection/working/committed)",
+            "POST /sessions": "Open session",
+            "GET /sessions/last": "Last closed session",
         },
         "constitutional_law": "Provider output != sovereign decision. Context is compositional, not sovereign.",
     })
@@ -989,6 +996,127 @@ def _buddy_greeting(ctx):
 def ui():
     """Serve the HELEN buddy interface."""
     return app.send_static_file("index.html")
+
+
+@app.route("/airi")
+def airi_client():
+    """Serve the HELEN AIRI companion interface."""
+    return app.send_static_file("airi.html")
+
+
+# ---------------------------------------------------------------------------
+# OpenAI-Compatible Shim — lets AIRI/any OpenAI client talk to HELEN
+# ---------------------------------------------------------------------------
+
+@app.route("/v1/chat/completions", methods=["POST"])
+def openai_compat_chat():
+    """
+    OpenAI-compatible chat completions endpoint.
+    AIRI and other OpenAI-compatible clients can connect here.
+
+    Accepts standard OpenAI format:
+    {
+        "model": "helen" | "helen-temple" | "helen-oracle" | "helen-mayor",
+        "messages": [{"role": "system"|"user"|"assistant", "content": "..."}],
+        "stream": false
+    }
+
+    Routes through HELEN's provider layer with Temple persona.
+    authority=NONE on all responses.
+    """
+    data = request.get_json(silent=True) or {}
+    messages = data.get("messages", [])
+    model = data.get("model", "helen")
+
+    # Extract user message (last user message)
+    user_msg = ""
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            user_msg = m.get("content", "")
+            break
+
+    if not user_msg:
+        return jsonify({"error": "No user message found"}), 400
+
+    # Map model name to district/mode for persona routing
+    mode_map = {
+        "helen": "companion",
+        "helen-companion": "companion",
+        "helen-adult": "companion",
+        "helen-temple": "temple",
+        "helen-oracle": "oracle",
+        "helen-mayor": "mayor",
+    }
+    mode = mode_map.get(model, "companion")
+
+    # Build context-augmented system prompt
+    ctx = assemble_context_packet(user_msg)
+    context_suffix = _context_suffix(ctx)
+
+    # Get district-specific persona
+    district_prompts = {
+        "companion": HELEN_SYSTEM_PROMPT,
+        "temple": HELEN_SYSTEM_PROMPT + "\n\nYou are in TEMPLE mode. Explore freely. Generate hypotheses. No claims. authority=NONE.",
+        "oracle": HELEN_SYSTEM_PROMPT + "\n\nYou are in ORACLE mode. Evaluate claims. Apply pressure. Evidence-first. authority=NONE.",
+        "mayor": HELEN_SYSTEM_PROMPT + "\n\nYou are in MAYOR mode. Review readiness. Check completeness. No admission power. authority=NONE.",
+    }
+    system_prompt = district_prompts.get(mode, HELEN_SYSTEM_PROMPT) + "\n\n" + context_suffix
+
+    # Build conversation history for provider
+    history = []
+    for m in messages:
+        if m.get("role") in ("user", "assistant"):
+            history.append({"role": m["role"], "content": m.get("content", "")})
+    # Remove the last user message (we pass it separately)
+    if history and history[-1]["role"] == "user":
+        history.pop()
+
+    # Select provider and call
+    selected = select_provider(user_msg)
+    start = time.time()
+    response_text, error = call_provider(selected, user_msg, history, system_prompt=system_prompt)
+    elapsed = round(time.time() - start, 2)
+
+    if error:
+        return jsonify({
+            "error": {"message": error, "type": "provider_error"},
+        }), 502
+
+    # Return OpenAI-compatible response format
+    return jsonify({
+        "id": f"chatcmpl-helen-{int(time.time())}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": response_text,
+            },
+            "finish_reason": "stop",
+        }],
+        "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        },
+        "authority": "NONE",
+        "helen_provider": selected,
+        "helen_elapsed": elapsed,
+    })
+
+
+@app.route("/v1/models", methods=["GET"])
+def openai_compat_models():
+    """List available HELEN models in OpenAI format."""
+    models = [
+        {"id": "helen", "object": "model", "owned_by": "helen-os"},
+        {"id": "helen-temple", "object": "model", "owned_by": "helen-os"},
+        {"id": "helen-oracle", "object": "model", "owned_by": "helen-os"},
+        {"id": "helen-mayor", "object": "model", "owned_by": "helen-os"},
+    ]
+    return jsonify({"object": "list", "data": models})
 
 
 # ---------------------------------------------------------------------------
