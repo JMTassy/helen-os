@@ -613,31 +613,73 @@ def chat():
 def init_helen():
     """
     /init HELEN — Boot recovery wedge.
-    Returns: identity, context packet, tensions, next action.
+    Returns: who you are, top threads, unresolved tensions, recent movement, best next action.
     Proves HELEN can recover working context after interruption.
 
     Constitutional contract:
     - authority = NONE
-    - deterministic (same corpus -> same output)
+    - reads from memory spine (threads, sessions, corpus)
     - no side effects
+    - missing memory degrades gracefully, never fabricates
     """
+    from helen_os.memory import get_active_threads, get_last_closed_session, get_memory_items
+
     ctx = assemble_context_packet("/init HELEN", mode="companion")
 
-    # Build the /init output
+    # Live threads (the real continuity data)
+    threads = get_active_threads(limit=7)
+    committed_threads = [t for t in threads if t.get("memory_class") == "committed"]
+    working_threads = [t for t in threads if t.get("memory_class") == "working"]
+
+    # Last closed session
+    last_session = get_last_closed_session()
+
+    # Unresolved items from threads
+    unresolved = [
+        {"thread": t["title"], "issue": t["unresolved"]}
+        for t in threads if t.get("unresolved")
+    ]
+
+    # Committed memory items (stable, resumable knowledge)
+    committed_items = get_memory_items(memory_class="committed", limit=5)
+
+    # Best next action: from top thread or corpus
+    top_thread = threads[0] if threads else None
+    if top_thread and top_thread.get("next_action"):
+        best_next = top_thread["next_action"]
+    else:
+        best_next = ctx["next_action"]
+
     output = {
         "identity": "HELEN OS — Local-first constitutional AI companion",
         "owner": "Jean-Marie Tassy (JM)",
-        "constraint": ctx["packet"].get("law", {}).get("title", ""),
-        "district": ctx["packet"].get("project", {}).get("title", ""),
-        "topic": {
-            "title": ctx["packet"].get("topic", {}).get("title", ""),
-            "salience": ctx["packet"].get("topic", {}).get("salience", ""),
+        "top_threads": [
+            {
+                "id": t["id"],
+                "title": t["title"],
+                "memory_class": t.get("memory_class", "working"),
+                "current_state": t.get("current_state"),
+                "next_action": t.get("next_action"),
+            }
+            for t in threads[:5]
+        ],
+        "unresolved_tensions": unresolved,
+        "recent_movement": {
+            "last_session": {
+                "id": last_session["id"],
+                "summary": last_session.get("summary"),
+                "what_changed": last_session.get("what_changed"),
+            } if last_session else None,
         },
-        "tensions": ctx["tensions"],
-        "now": ctx["next_action"],
-        "working_on": {
-            "thread": ctx["packet"].get("thread", {}).get("title", ""),
-            "relevance": ctx["rationale"],
+        "best_next_action": best_next,
+        "committed_memory": [
+            {"text": m["text"], "source": m.get("source")}
+            for m in committed_items
+        ],
+        "corpus_context": {
+            "topic": ctx["packet"].get("topic", {}).get("title", ""),
+            "project": ctx["packet"].get("project", {}).get("title", ""),
+            "law": ctx["packet"].get("law", {}).get("title", ""),
         },
         "authority": "NONE",
         "packet_hash": ctx["packet_hash"],
@@ -947,6 +989,148 @@ def _buddy_greeting(ctx):
 def ui():
     """Serve the HELEN buddy interface."""
     return app.send_static_file("index.html")
+
+
+# ---------------------------------------------------------------------------
+# Threads — work continuity
+# ---------------------------------------------------------------------------
+
+@app.route("/threads")
+def list_threads():
+    """List active threads. authority=NONE."""
+    from helen_os.memory import get_active_threads
+    memory_class = request.args.get("class")
+    threads = get_active_threads(memory_class=memory_class, limit=20)
+    return jsonify({"authority": "NONE", "threads": threads, "count": len(threads)})
+
+
+@app.route("/threads", methods=["POST"])
+def create_thread_endpoint():
+    """Create a new thread. authority=NONE for reflection/working."""
+    from helen_os.memory import create_thread
+    data = request.get_json(silent=True) or {}
+    thread_id = data.get("id", "")
+    title = data.get("title", "")
+    if not thread_id or not title:
+        return jsonify({"error": "id and title required"}), 400
+    create_thread(
+        thread_id=thread_id,
+        title=title,
+        memory_class=data.get("memory_class", "working"),
+        current_state=data.get("current_state"),
+        unresolved=data.get("unresolved"),
+        next_action=data.get("next_action"),
+    )
+    return jsonify({"status": "created", "thread_id": thread_id, "authority": "NONE"})
+
+
+@app.route("/threads/<thread_id>", methods=["PATCH"])
+def update_thread_endpoint(thread_id):
+    """Update a thread's state. authority=NONE for working fields."""
+    from helen_os.memory import update_thread
+    data = request.get_json(silent=True) or {}
+    update_thread(thread_id, **data)
+    return jsonify({"status": "updated", "thread_id": thread_id, "authority": "NONE"})
+
+
+@app.route("/threads/<thread_id>/promote", methods=["POST"])
+def promote_thread_endpoint(thread_id):
+    """Promote thread to committed. Requires MAYOR/SYSTEM actor."""
+    from helen_os.memory import promote_thread
+    data = request.get_json(silent=True) or {}
+    actor = data.get("actor", "")
+    if actor not in {"MAYOR", "SYSTEM"}:
+        return jsonify({"error": "Only MAYOR or SYSTEM may promote threads"}), 403
+    promote_thread(thread_id, actor=actor)
+    return jsonify({"status": "promoted", "thread_id": thread_id, "memory_class": "committed"})
+
+
+@app.route("/threads/<thread_id>/close", methods=["POST"])
+def close_thread_endpoint(thread_id):
+    """Close a thread."""
+    from helen_os.memory import close_thread
+    close_thread(thread_id)
+    return jsonify({"status": "closed", "thread_id": thread_id})
+
+
+# ---------------------------------------------------------------------------
+# Memory Items — classified knowledge
+# ---------------------------------------------------------------------------
+
+@app.route("/memory/items")
+def list_memory_items():
+    """List memory items. authority=NONE."""
+    from helen_os.memory import get_memory_items
+    memory_class = request.args.get("class")
+    thread_id = request.args.get("thread_id")
+    items = get_memory_items(memory_class=memory_class, thread_id=thread_id, limit=30)
+    return jsonify({"authority": "NONE", "items": items, "count": len(items)})
+
+
+@app.route("/memory/items", methods=["POST"])
+def add_memory_item_endpoint():
+    """Add a memory item. authority=NONE for reflection/working."""
+    from helen_os.memory import add_memory_item
+    data = request.get_json(silent=True) or {}
+    text = data.get("text", "")
+    if not text:
+        return jsonify({"error": "text required"}), 400
+    add_memory_item(
+        text=text,
+        memory_class=data.get("memory_class", "reflection"),
+        thread_id=data.get("thread_id"),
+        source=data.get("source"),
+    )
+    return jsonify({"status": "stored", "memory_class": data.get("memory_class", "reflection"), "authority": "NONE"})
+
+
+@app.route("/memory/items/<int:item_id>/promote", methods=["POST"])
+def promote_memory_item_endpoint(item_id):
+    """Promote memory item to committed. Requires MAYOR/SYSTEM."""
+    from helen_os.memory import promote_memory_item
+    data = request.get_json(silent=True) or {}
+    actor = data.get("actor", "")
+    if actor not in {"MAYOR", "SYSTEM"}:
+        return jsonify({"error": "Only MAYOR or SYSTEM may promote items"}), 403
+    promote_memory_item(item_id, actor=actor)
+    return jsonify({"status": "promoted", "item_id": item_id, "memory_class": "committed"})
+
+
+# ---------------------------------------------------------------------------
+# Sessions — structured lifecycle
+# ---------------------------------------------------------------------------
+
+@app.route("/sessions", methods=["POST"])
+def open_session_endpoint():
+    """Open a new session."""
+    from helen_os.memory import open_session
+    data = request.get_json(silent=True) or {}
+    session_id = data.get("session_id", f"session_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}")
+    open_session(session_id, active_district=data.get("district", "companion"))
+    return jsonify({"status": "opened", "session_id": session_id})
+
+
+@app.route("/sessions/<session_id>/close", methods=["POST"])
+def close_session_endpoint(session_id):
+    """Close a session with structured summary."""
+    from helen_os.memory import close_session
+    data = request.get_json(silent=True) or {}
+    close_session(
+        session_id=session_id,
+        summary=data.get("summary"),
+        what_changed=data.get("what_changed"),
+        unresolved=data.get("unresolved"),
+        promoted_items=data.get("promoted_items"),
+    )
+    return jsonify({"status": "closed", "session_id": session_id})
+
+
+@app.route("/sessions/last")
+def last_session():
+    """Return last closed session. authority=NONE."""
+    from helen_os.memory import get_last_closed_session
+    session = get_last_closed_session()
+    return jsonify({"authority": "NONE", "session": session})
 
 
 # ---------------------------------------------------------------------------
