@@ -256,7 +256,8 @@ def select_provider(message, preferred=None):
         if key is None or os.environ.get(key):
             return p
 
-    return "claude"
+    # No provider has a key configured
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -570,6 +571,13 @@ def chat():
 
     # Select provider (non-sovereign routing)
     selected = select_provider(message, preferred)
+    if selected is None:
+        return jsonify({
+            "error": "No AI provider configured. Set ANTHROPIC_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY in environment.",
+            "type": "PROVIDER_UNAVAILABLE",
+            "authority": "NONE",
+            "note": "Cognition unavailable. Kernel and memory remain operational.",
+        }), 503
     cfg = PROVIDERS[selected]
 
     # Assemble context from memory spine (non-sovereign, authority=NONE)
@@ -1073,6 +1081,10 @@ def openai_compat_chat():
 
     # Select provider and call
     selected = select_provider(user_msg)
+    if selected is None:
+        return jsonify({
+            "error": {"message": "No AI provider configured. Set API keys in environment.", "type": "provider_unavailable"},
+        }), 503
     start = time.time()
     response_text, error = call_provider(selected, user_msg, history, system_prompt=system_prompt)
     elapsed = round(time.time() - start, 2)
