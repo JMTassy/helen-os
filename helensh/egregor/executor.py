@@ -1,166 +1,145 @@
-"""HELEN OS — Egregor v0 Executor.
+"""EGREGOR Executor — Where reality happens.
 
-The full governed path:
+The governed path:
 
-    task
-    → classify()
-    → pick street
-    → call primary model
-    → HAL review
-    → if reject: fallback model
-    → return result + receipt
+    task → classify() → pick street → call model → hal_review()
+      → if reject: fallback model → hal_review()
+      → return result + attempts trace
 
-One task enters, one street selected deterministically,
-one model answer reviewed by HAL, one clean governed result exits.
+hal_review is NOT intelligent. NOT semantic. JUST A GUARDRAIL.
+Criteria today: non-empty, non-broken. That's it.
 
-That is Egregor v0.
+Later: syntax checks, schema checks, invariants, real hal_reviewer.
 
-Non-negotiables:
-    - authority: False on every result
-    - HAL reviews every answer — no bypass
-    - receipt hash on every result — no receipt = no reality
-    - fail-closed: all models fail → governed failure, not silent pass
+If this works:
+    THEN you add receipts
+    THEN you add consensus
+    THEN you add FACT-style tools
+
+If this breaks:
+    everything else is fake
 """
 from __future__ import annotations
 
-import time
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from helensh.state import canonical_hash
-from helensh.adapters.ollama import OllamaClient, OllamaError
-from helensh.agents.hal_reviewer import HalReviewer
-from helensh.egregor.registry import EGREGOR_ROUTES, get_chain
 from helensh.egregor.router import classify
+from helensh.egregor.registry import get_models_for_street
 
 
-# ── Result type ──────────────────────────────────────────────────────────────
+# ── Ollama call ──────────────────────────────────────────────────────────────
 
-@dataclass(frozen=True)
-class EgregorResult:
-    """One governed result from Egregor v0.
+def ollama_call(model: str, prompt: str) -> str:
+    """Call a model via Ollama. Replace with real client."""
+    from helensh.adapters.ollama import OllamaClient, OllamaError
+    client = OllamaClient()
+    try:
+        return client.chat(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except OllamaError:
+        return ""
 
-    authority is always False. Structurally.
+
+# ── HAL review stub ──────────────────────────────────────────────────────────
+
+def hal_review(output: str) -> Dict[str, Any]:
+    """Minimal HAL stub. Replace later with real HAL agent.
+
+    NOT intelligent. NOT semantic. JUST A GUARDRAIL.
+    Criteria: non-empty, non-broken. That's it.
     """
-    street: str
-    model: Optional[str]
-    result: Optional[str]
-    review: Dict[str, Any]
-    receipt_hash: str
-    authority: bool = False
+    if not output or len(output.strip()) < 5:
+        return {"verdict": "REJECT", "reason": "empty_or_short"}
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "authority", False)
-
-    @property
-    def allowed(self) -> bool:
-        return self.review.get("verdict") == "APPROVE"
+    return {"verdict": "APPROVE", "reason": "basic_pass"}
 
 
 # ── Executor ─────────────────────────────────────────────────────────────────
 
-def run_task(
-    task: str,
-    client: Optional[OllamaClient] = None,
-    hal: Optional[HalReviewer] = None,
-    state: Optional[dict] = None,
-) -> EgregorResult:
+def run_task(task: str) -> Dict[str, Any]:
     """Execute one task through the governed Egregor pipeline.
 
-    1. classify(task) → street
-    2. For each model in street's fallback chain:
-       a. Call model with task
-       b. HAL reviews the result
-       c. If APPROVE → return governed result with receipt
-       d. If REJECT → try next model in chain
-    3. All models rejected → return governed failure
-
-    authority: False on every output. No exceptions.
+    Returns:
+        street:   which street was selected
+        model:    which model produced the approved output (None if all rejected)
+        output:   the approved output text (None if all rejected)
+        approved: bool — did any model pass HAL review?
+        attempts: full trace of every model tried + HAL verdict
     """
-    if client is None:
-        client = OllamaClient()
-    if hal is None:
-        hal = HalReviewer(client=client)
-    if state is None:
-        state = {"session_id": "egregor-v0", "turn": 0}
-
     street = classify(task)
-    chain = get_chain(street)
+    models = get_models_for_street(street)
 
-    last_review: Dict[str, Any] = {"verdict": "REJECT", "rationale": "no models attempted"}
+    attempts: List[Dict[str, Any]] = []
 
-    for model in chain:
-        # Call model
-        model_output = _call_model(client, model, task)
-        if model_output is None:
-            continue
+    for model in models:
+        result = ollama_call(model, task)
 
-        # HAL reviews
-        proposal = {
-            "action": "egregor_response",
-            "street": street,
+        review = hal_review(result)
+
+        attempts.append({
             "model": model,
-            "payload": {"task": task, "response": model_output},
-            "confidence": 0.5,
-            "authority": False,
-        }
-        review = hal.review(proposal, state)
-        last_review = review
+            "result": result,
+            "review": review,
+        })
 
-        if review.get("verdict") == "APPROVE":
-            receipt = _make_receipt(street, model, task, model_output, review)
-            return EgregorResult(
-                street=street,
-                model=model,
-                result=model_output,
-                review=review,
-                receipt_hash=receipt,
-            )
+        if review["verdict"] == "APPROVE":
+            return {
+                "street": street,
+                "model": model,
+                "output": result,
+                "approved": True,
+                "attempts": attempts,
+            }
 
-    # All models in chain failed or rejected
-    receipt = _make_receipt(street, None, task, None, last_review)
-    return EgregorResult(
-        street=street,
-        model=None,
-        result=None,
-        review=last_review,
-        receipt_hash=receipt,
+    return {
+        "street": street,
+        "model": None,
+        "output": None,
+        "approved": False,
+        "attempts": attempts,
+    }
+
+
+# ── Receipted executor ───────────────────────────────────────────────────────
+
+def run_task_receipted(task: str, ledger: "CourtLedger") -> Dict[str, Any]:
+    """run_task + every attempt becomes a receipt in CourtLedger.
+
+    This is Egregor wired into the court.
+    No receipt = no reality.
+    """
+    from helensh.court import CourtLedger  # avoid circular at module level
+
+    result = run_task(task)
+
+    # Record every attempt
+    for attempt in result["attempts"]:
+        ledger.record_egregor_attempt(
+            task=task,
+            street=result["street"],
+            model=attempt["model"],
+            result=attempt["result"],
+            verdict=attempt["review"]["verdict"],
+            reason=attempt["review"]["reason"],
+        )
+
+    # Record final decision
+    ledger.record_egregor_result(
+        task=task,
+        street=result["street"],
+        model=result["model"],
+        approved=result["approved"],
+        attempt_count=len(result["attempts"]),
     )
 
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
-def _call_model(client: OllamaClient, model: str, task: str) -> Optional[str]:
-    """Call one Ollama model. Returns text or None on failure."""
-    try:
-        return client.chat(
-            model=model,
-            messages=[{"role": "user", "content": task}],
-            temperature=0.7,
-        )
-    except OllamaError:
-        return None
-
-
-def _make_receipt(
-    street: str,
-    model: Optional[str],
-    task: str,
-    result: Optional[str],
-    review: Dict[str, Any],
-) -> str:
-    """Create a receipt hash for this execution."""
-    return canonical_hash({
-        "street": street,
-        "model": model,
-        "task": task,
-        "result_hash": canonical_hash({"text": result}) if result else None,
-        "verdict": review.get("verdict", "REJECT"),
-        "authority": False,
-    })
+    return result
 
 
 __all__ = [
-    "EgregorResult",
+    "ollama_call",
+    "hal_review",
     "run_task",
+    "run_task_receipted",
 ]

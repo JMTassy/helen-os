@@ -1,50 +1,50 @@
-"""HELEN OS — Egregor v0 Registry.
+"""EGREGOR Registry — Source of truth for model routing.
 
-4 streets. That's it.
+Rules:
+- Deterministic
+- No dynamic mutation
+- No hidden logic
 
-    chat   → helen-chat, helen-core
-    code   → her-coder, qwen2.5-coder:7b
-    review → hal-reviewer
-    fast   → helen-ship, qwen2.5:3b
-
-Each street has an ordered fallback chain.
-Primary fails → next in list. All fail → governed failure.
+This file must stay boring.
+If this becomes dynamic, your system becomes non-deterministic.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
-# ── The 4 streets ────────────────────────────────────────────────────────────
-
+# Each street = ordered list (primary → fallback)
 EGREGOR_ROUTES: Dict[str, List[str]] = {
-    "chat": ["helen-chat:latest", "helen-core:latest"],
-    "code": ["her-coder:latest", "qwen2.5-coder:7b"],
-    "review": ["hal-reviewer:latest"],
-    "fast": ["helen-ship:latest", "qwen2.5:3b"],
+    "chat": [
+        "helen-chat",     # primary conversational identity
+        "helen-core",     # fallback
+    ],
+    "code": [
+        "her-coder",              # HELEN-aligned coder
+        "qwen2.5-coder:7b",      # fallback
+    ],
+    "reason": [
+        "deepseek-r1:8b",        # reasoning specialist
+        "gemma4",                 # fallback generalist
+    ],
+    "fast": [
+        "helen-ship",             # ultra fast HELEN
+        "qwen2.5:3b",            # fallback
+    ],
 }
 
-# Default street when classifier finds nothing
-DEFAULT_STREET = "chat"
-
-# All models referenced by the registry (union of all chains)
-REGISTRY_MODELS = sorted({m for chain in EGREGOR_ROUTES.values() for m in chain})
+# Allowed streets (hard boundary)
+VALID_STREETS = set(EGREGOR_ROUTES.keys())
 
 
-def get_chain(street: str) -> List[str]:
-    """Return the fallback chain for a street. Empty list if unknown."""
-    return list(EGREGOR_ROUTES.get(street, []))
-
-
-def list_streets() -> List[str]:
-    """Return all registered street names."""
-    return sorted(EGREGOR_ROUTES.keys())
+def get_models_for_street(street: str) -> List[str]:
+    """Return model chain for a street. Raises on unknown street."""
+    if street not in EGREGOR_ROUTES:
+        raise ValueError(f"Unknown street: {street}")
+    return EGREGOR_ROUTES[street]
 
 
 __all__ = [
     "EGREGOR_ROUTES",
-    "DEFAULT_STREET",
-    "REGISTRY_MODELS",
-    "get_chain",
-    "list_streets",
+    "VALID_STREETS",
+    "get_models_for_street",
 ]

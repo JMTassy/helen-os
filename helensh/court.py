@@ -454,6 +454,44 @@ class CourtLedger:
                 ))
         return result
 
+    # ── Egregor receipts ─────────────────────────────────────────
+
+    def record_egregor_attempt(
+        self,
+        task: str,
+        street: str,
+        model: str,
+        result: str,
+        verdict: str,
+        reason: str,
+    ) -> Dict[str, Any]:
+        """Record a single Egregor model attempt in the ledger."""
+        return self._append("EGREGOR_ATTEMPT", {
+            "task": task,
+            "street": street,
+            "model": model,
+            "result_length": len(result) if result else 0,
+            "verdict": verdict,
+            "reason": reason,
+        })
+
+    def record_egregor_result(
+        self,
+        task: str,
+        street: str,
+        model: Optional[str],
+        approved: bool,
+        attempt_count: int,
+    ) -> Dict[str, Any]:
+        """Record the final Egregor routing decision in the ledger."""
+        return self._append("EGREGOR_RESULT", {
+            "task": task,
+            "street": street,
+            "model": model,
+            "approved": approved,
+            "attempt_count": attempt_count,
+        })
+
     def close(self) -> None:
         """Close the database connection."""
         self._conn.close()

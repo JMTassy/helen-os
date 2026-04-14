@@ -1,48 +1,27 @@
-"""HELEN OS — Egregor v0 Router.
+"""Deterministic task → street classifier.
 
-Dumb deterministic classifier. No embeddings. No learned routing.
-Same input → same street. Always.
+No embeddings. No LLM. Just rules.
+Same input → same output. Always.
 
-    code keywords → "code"
-    fast keywords → "fast"
-    everything else → "chat"
-
-"review" street is never auto-routed — it's called structurally
-by the executor (HAL reviews every answer). You don't route to review;
-review happens to you.
+Smart routing comes later. First: correctness.
 """
 from __future__ import annotations
 
-from helensh.egregor.registry import DEFAULT_STREET
-
-# ── Keywords ─────────────────────────────────────────────────────────────────
-
-_CODE_KEYWORDS = (
-    "code", "python", "bug", "function", "refactor", "implement",
-    "class ", "def ", "import ", "test", "debug", "script", "api",
-    "sql", "regex", "parse", "compile", "syntax", "error",
-)
-
-_FAST_KEYWORDS = (
-    "quick", "fast", "brief", "one line", "short", "tldr", "yes or no",
-    "one word",
-)
-
-
-# ── Classifier ───────────────────────────────────────────────────────────────
 
 def classify(task: str) -> str:
-    """Classify a task string into a street name.
-
-    Deterministic: same input → same output. No randomness.
-    Returns one of: "code", "fast", "chat".
-    """
+    """Classify a task into a street name. Deterministic."""
     t = task.lower()
-    if any(kw in t for kw in _CODE_KEYWORDS):
+
+    if any(k in t for k in ("code", "function", "python", "bug", "fix")):
         return "code"
-    if any(kw in t for kw in _FAST_KEYWORDS):
+
+    if any(k in t for k in ("why", "explain", "reason", "proof")):
+        return "reason"
+
+    if any(k in t for k in ("quick", "fast", "short")):
         return "fast"
-    return DEFAULT_STREET
+
+    return "chat"
 
 
 __all__ = ["classify"]
