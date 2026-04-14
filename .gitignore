@@ -56,3 +56,4 @@ docker-compose.override.yml
 # HELEN OS state (local-only, not committed)
 helensh/.state/
 *.ndjson
+helen_court.db
