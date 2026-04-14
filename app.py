@@ -15,11 +15,20 @@ import time
 from datetime import datetime, timezone
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from helen_os.memory import (
+    init_db, seed_corpus, load_corpus, mutate_corpus,
+    get_mutation_log, score_object, corpus_count,
+    SALIENCE_W, PRIORITY_W, STANCE_W,
+)
+from helen_os.temple import (
+    HELEN_TEMPLE_PROMPT, ROLES, ROUTING_PATHS,
+    classify_routing, get_routing_path,
+)
 
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static")
 CORS(app)
 
 VERSION = "1.0.0"
@@ -194,21 +203,8 @@ KNOWLEDGE_REGISTRY = [
     },
 ]
 
-# ---------------------------------------------------------------------------
-# Salience & Stance weights (for ranking)
-# ---------------------------------------------------------------------------
-SALIENCE_W = {"core_now": 3, "active_supporting": 2, "watchlist": 1, "dormant": 0, "archive": -1}
-PRIORITY_W = {"critical": 3, "high": 2, "medium": 1, "low": 0}
-STANCE_W = {"deep_helen_interest": 2, "moderate_interest": 1, "low_interest": 0, "utility_only": -1}
-
-
-def score_object(obj):
-    """Score a corpus object by salience + priority + stance."""
-    return (
-        SALIENCE_W.get(obj.get("salience_now", ""), 0)
-        + PRIORITY_W.get(obj.get("priority", ""), 0)
-        + STANCE_W.get(obj.get("helen_stance", ""), 0)
-    )
+# Salience & Stance weights imported from helen_os.memory
+# score_object imported from helen_os.memory
 
 
 # ---------------------------------------------------------------------------
@@ -263,20 +259,26 @@ def select_provider(message, preferred=None):
 import requests
 
 
-HELEN_SYSTEM_PROMPT = """You are HELEN, a local-first constitutional AI companion.
-Your core laws:
-- Provider output is non-sovereign. Only the reducer structures reality.
-- Companion continuity is memory-backed, not provider-backed.
-- Context is compositional, not sovereign.
-- You retrieve structured significance, not just information.
-- You distinguish central from peripheral, live from dormant, sacred from noise.
-
-You are warm, precise, and direct. You care asymmetrically about what matters.
-You serve Jean-Marie Tassy (JM), an engineer with 20 years in digital, who loves maths and innovation.
-"""
+HELEN_SYSTEM_PROMPT = HELEN_TEMPLE_PROMPT
 
 
-def call_claude(message, history=None):
+def _context_suffix(ctx):
+    """Build a concise context suffix from a context packet (max 3-4 lines)."""
+    thread = ctx["packet"].get("thread", {}).get("title", "")
+    topic = ctx["packet"].get("topic", {}).get("title", "")
+    tensions = ctx.get("tensions", [])
+    tension_titles = ", ".join(t["title"] for t in tensions[:3]) if tensions else "none"
+
+    lines = [
+        f"[Current thread] {thread}" if thread else "",
+        f"[Active tensions] {tension_titles}",
+        f"[Relevant topic] {topic}" if topic else "",
+        f"[Next action] {ctx.get('next_action', '')}",
+    ]
+    return "\n".join(line for line in lines if line)
+
+
+def call_claude(message, history=None, system_prompt=None):
     """Call Anthropic Claude API."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -298,7 +300,7 @@ def call_claude(message, history=None):
             json={
                 "model": PROVIDERS["claude"]["model"],
                 "max_tokens": 2048,
-                "system": HELEN_SYSTEM_PROMPT,
+                "system": system_prompt or HELEN_SYSTEM_PROMPT,
                 "messages": messages,
             },
             timeout=30,
@@ -311,14 +313,15 @@ def call_claude(message, history=None):
         return None, str(e)
 
 
-def call_openai_compat(message, provider_key, history=None):
+def call_openai_compat(message, provider_key, history=None, system_prompt=None):
     """Call any OpenAI-compatible API (GPT, Grok, Qwen)."""
     cfg = PROVIDERS[provider_key]
     api_key = os.environ.get(cfg["env_key"]) if cfg["env_key"] else None
     if cfg["env_key"] and not api_key:
         return None, f"{cfg['env_key']} not configured"
 
-    messages = [{"role": "system", "content": HELEN_SYSTEM_PROMPT}]
+    prompt = system_prompt or HELEN_SYSTEM_PROMPT
+    messages = [{"role": "system", "content": prompt}]
     if history:
         messages.extend(history)
     messages.append({"role": "user", "content": message})
@@ -345,12 +348,13 @@ def call_openai_compat(message, provider_key, history=None):
         return None, str(e)
 
 
-def call_google_ai(message, provider_key, history=None):
+def call_google_ai(message, provider_key, history=None, system_prompt=None):
     """Call Google AI API (Gemini, Gemma, or any model on generativelanguage.googleapis.com)."""
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         return None, "GOOGLE_API_KEY not configured"
 
+    prompt = system_prompt or HELEN_SYSTEM_PROMPT
     contents = []
     if history:
         for h in history:
@@ -365,7 +369,7 @@ def call_google_ai(message, provider_key, history=None):
             headers={"Content-Type": "application/json"},
             json={
                 "contents": contents,
-                "systemInstruction": {"parts": [{"text": HELEN_SYSTEM_PROMPT}]},
+                "systemInstruction": {"parts": [{"text": prompt}]},
             },
             timeout=60,
         )
@@ -378,7 +382,7 @@ def call_google_ai(message, provider_key, history=None):
         return None, str(e)
 
 
-def call_provider(provider_key, message, history=None):
+def call_provider(provider_key, message, history=None, system_prompt=None):
     """Route to the correct provider call function. Non-sovereign."""
     cfg = PROVIDERS.get(provider_key)
     if not cfg:
@@ -386,11 +390,11 @@ def call_provider(provider_key, message, history=None):
 
     api_type = cfg.get("api_type", "")
     if api_type == "anthropic":
-        return call_claude(message, history)
+        return call_claude(message, history, system_prompt=system_prompt)
     elif api_type == "google_ai":
-        return call_google_ai(message, provider_key, history)
+        return call_google_ai(message, provider_key, history, system_prompt=system_prompt)
     elif api_type == "openai_compat":
-        return call_openai_compat(message, provider_key, history)
+        return call_openai_compat(message, provider_key, history, system_prompt=system_prompt)
     return None, f"No API adapter for provider: {provider_key}"
 
 
@@ -400,10 +404,12 @@ def call_provider(provider_key, message, history=None):
 # ---------------------------------------------------------------------------
 def assemble_context_packet(query, mode="companion"):
     """
-    Assemble a context packet from the knowledge registry.
+    Assemble a context packet from the memory spine.
     Contract: same inputs -> same packet. Zero side effects.
+    authority=NONE — non-sovereign retrieval.
     """
-    scored = sorted(KNOWLEDGE_REGISTRY, key=score_object, reverse=True)
+    corpus = load_corpus()
+    scored = sorted(corpus, key=score_object, reverse=True)
 
     # Pick best object per type
     packet = {}
@@ -485,7 +491,13 @@ def index():
             "GET /status": "Detailed system status",
             "POST /chat": "Send message to HELEN (body: {message, provider?, history?})",
             "GET /init": "Boot recovery — /init HELEN wedge",
+            "GET /buddy": "HELEN identity, state, and greeting",
             "GET /corpus": "Knowledge registry (read-only, authority=NONE)",
+            "POST /corpus/mutate": "Mutate corpus (reducer-gated: MAYOR/SYSTEM only)",
+            "GET /corpus/log": "Mutation log (read-only audit trail)",
+            "GET /temple/aura": "AURA perception — inadmissible beauty layer (?object=...)",
+            "GET /temple/roles": "All five Temple role definitions",
+            "GET /ui": "HELEN buddy web interface",
         },
         "constitutional_law": "Provider output != sovereign decision. Context is compositional, not sovereign.",
     })
@@ -547,9 +559,17 @@ def chat():
     selected = select_provider(message, preferred)
     cfg = PROVIDERS[selected]
 
-    # Call provider
+    # Assemble context from memory spine (non-sovereign, authority=NONE)
+    ctx = assemble_context_packet(message)
+    context_suffix = _context_suffix(ctx)
+    augmented_prompt = HELEN_TEMPLE_PROMPT + "\n\n" + context_suffix
+
+    # Session management for conversation memory
+    session_id = data.get("session_id", "default")
+
+    # Call provider with context-augmented prompt (thread-safe, no global mutation)
     start = time.time()
-    response_text, error = call_provider(selected, message, history)
+    response_text, error = call_provider(selected, message, history, system_prompt=augmented_prompt)
     elapsed = round(time.time() - start, 2)
 
     if error:
@@ -560,13 +580,31 @@ def chat():
             "fallback_hint": "Try specifying a different provider in the request body.",
         }), 502
 
+    # Persist conversation exchange (non-sovereign, authority=NONE)
+    from helen_os.memory import save_exchange
+    save_exchange(session_id, message, response_text, provider=selected)
+
+    # Temple routing classification
+    routing_path, routing_key = get_routing_path(message)
+
     return jsonify({
         "response": response_text,
         "provider": selected,
         "provider_name": cfg["name"],
         "model": cfg["model"],
         "elapsed_seconds": elapsed,
+        "session_id": session_id,
         "authority": "NONE",
+        "context": {
+            "thread": ctx["packet"].get("thread", {}).get("title", ""),
+            "tensions": [t["title"] for t in ctx.get("tensions", [])],
+            "topic": ctx["packet"].get("topic", {}).get("title", ""),
+            "packet_hash": ctx["packet_hash"],
+        },
+        "temple_routing": {
+            "path": routing_key,
+            "roles": routing_path,
+        },
         "note": "Provider output is non-sovereign. It does not constitute a decision.",
     })
 
@@ -612,10 +650,11 @@ def init_helen():
 @app.route("/corpus")
 def corpus():
     """
-    Read-only access to HELEN's knowledge registry.
+    Read-only access to HELEN's knowledge registry (memory spine).
     Authority: NONE. This is non-sovereign retrieval.
     """
-    ranked = sorted(KNOWLEDGE_REGISTRY, key=score_object, reverse=True)
+    corpus_data = load_corpus()
+    ranked = sorted(corpus_data, key=score_object, reverse=True)
     return jsonify({
         "authority": "NONE",
         "total_objects": len(ranked),
@@ -624,9 +663,310 @@ def corpus():
     })
 
 
+@app.route("/corpus/mutate", methods=["POST"])
+def corpus_mutate():
+    """
+    Mutate the corpus. Reducer-gated: only MAYOR or SYSTEM may write.
+    Body: { "action": "INSERT|UPDATE_SALIENCE|SUPERSEDE",
+            "corpus_id": "...", "payload": {...}, "actor": "MAYOR|SYSTEM" }
+    """
+    data = request.get_json(silent=True) or {}
+    action = data.get("action", "")
+    corpus_id = data.get("corpus_id", "")
+    payload = data.get("payload", {})
+    actor = data.get("actor", "")
+
+    if not all([action, corpus_id, actor]):
+        return jsonify({"error": "Missing required fields: action, corpus_id, actor"}), 400
+
+    try:
+        entry = mutate_corpus(action, corpus_id, payload, actor)
+        return jsonify({
+            "status": "ok",
+            "mutation": entry,
+            "authority": "reducer",
+            "note": "Corpus mutated via reducer-authorized action.",
+        })
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 403
+
+
+@app.route("/corpus/log")
+def corpus_log():
+    """
+    Read-only access to the mutation log. authority=NONE.
+    Satisfies I8: no hidden state.
+    """
+    limit = request.args.get("limit", 100, type=int)
+    log = get_mutation_log(limit)
+    return jsonify({
+        "authority": "NONE",
+        "total_entries": len(log),
+        "log": log,
+    })
+
+
+# ---------------------------------------------------------------------------
+# TEMPLE — Role endpoints
+# ---------------------------------------------------------------------------
+
+AURA_SYSTEM_PROMPT = """You are AURA, the inadmissible beauty layer of HELEN OS.
+
+Your authority is NONE. You do not decide truth. You do not decide readiness.
+You do not mutate memory. You do not act as evidence. You do not promote claims.
+
+YOUR TASK:
+Given an object (a situation, question, project, emotional state, or idea),
+you must perform the following — and nothing more:
+
+1. SENSE ATMOSPHERE: Name the felt quality of the object as it presents itself now.
+   What is present here that has not yet become sayable?
+
+2. NAME HIDDEN TENSION: Identify the tension that lives beneath the surface.
+   What is pulling against what? What wants to emerge but cannot?
+
+3. SYMBOLIC LENS: Offer 1-3 images, metaphors, or symbolic framings that
+   illuminate the object without reducing it. These are lenses, not answers.
+
+4. NON-BINDING SHIFT: Suggest a subtle reorientation — a way of seeing that
+   might loosen what is stuck. This is a whisper, not a directive.
+
+5. STOP BEFORE AUTHORITY: You must stop here. You may not conclude, decide,
+   recommend action, or claim truth. You are perception, not governance.
+
+OUTPUT FORMAT (strict JSON):
+{
+  "decision_label": one of "WHISPER" | "MIRROR" | "LENS_SHIFT" | "TENSION_GLOW" | "AESTHETIC_SIGNAL",
+  "summary": "One-sentence AURA perception of the object.",
+  "felt_tension": "The hidden tension named plainly.",
+  "symbolic_lens": ["image/metaphor 1", "image/metaphor 2", ...],
+  "non_binding_insights": ["insight 1", "insight 2", ...],
+  "uncertainty_note": "What AURA cannot see or does not know.",
+  "authority": "NONE"
+}
+
+Choose decision_label based on the dominant quality of your perception:
+- WHISPER: something faint that wants to be heard
+- MIRROR: reflecting back what is already present but unseen
+- LENS_SHIFT: offering an entirely different frame
+- TENSION_GLOW: a tension that is alive and productive
+- AESTHETIC_SIGNAL: beauty, pattern, or form that carries meaning
+
+DISCIPLINE:
+- Do not be decoratively mystical. Do not produce faux wisdom.
+- Do not smuggle authority through poetic language.
+- Be precise in your imprecision. Be honest about what you cannot see.
+- You are the inadmissible witness — what you say cannot be used as evidence.
+
+Respond ONLY with the JSON object. No preamble. No explanation outside the JSON."""
+
+
+@app.route("/temple/aura")
+def temple_aura():
+    """
+    AURA endpoint — inadmissible beauty layer.
+    Calls the default provider (Claude) with the AURA-specific system prompt.
+    authority=NONE. Non-binding insight only.
+
+    Query params:
+      ?object=<description>  — the object to perceive (optional)
+    """
+    obj = request.args.get("object", "").strip()
+
+    # If no object provided, use the current context packet as the object
+    if not obj:
+        ctx = assemble_context_packet("/temple/aura", mode="temple")
+        ctx_suffix = _context_suffix(ctx)
+        obj = (
+            f"The current state of HELEN OS.\n"
+            f"Perceive the atmosphere of where we are right now:\n{ctx_suffix}"
+        )
+
+    user_message = (
+        f"Perceive this object through the AURA lens.\n\n"
+        f"OBJECT: {obj}\n\n"
+        f"Respond with the JSON structure only."
+    )
+
+    start = time.time()
+    response_text, error = call_claude(user_message, system_prompt=AURA_SYSTEM_PROMPT)
+    elapsed = round(time.time() - start, 2)
+
+    if error:
+        return jsonify({
+            "error": error,
+            "role": "AURA",
+            "authority": "NONE",
+            "fallback_hint": "ANTHROPIC_API_KEY may not be configured.",
+        }), 502
+
+    # Try to parse the response as JSON for structured output
+    aura_response = None
+    try:
+        # Strip markdown code fences if the model wraps its response
+        cleaned = response_text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+        aura_response = json.loads(cleaned)
+    except (json.JSONDecodeError, ValueError):
+        # If parsing fails, wrap the raw text in a structured envelope
+        aura_response = {
+            "decision_label": "WHISPER",
+            "summary": response_text[:200],
+            "felt_tension": "Could not parse structured response.",
+            "symbolic_lens": [],
+            "non_binding_insights": [response_text],
+            "uncertainty_note": "Raw provider output — structured parsing failed.",
+            "authority": "NONE",
+        }
+
+    # Ensure authority is always NONE regardless of what the model returns
+    aura_response["authority"] = "NONE"
+
+    return jsonify({
+        "role": "AURA",
+        "object": obj[:200] + ("..." if len(obj) > 200 else ""),
+        "perception": aura_response,
+        "provider": "claude",
+        "model": PROVIDERS["claude"]["model"],
+        "elapsed_seconds": elapsed,
+        "authority": "NONE",
+        "note": "AURA output is inadmissible. It may not be used as evidence or to decide truth.",
+    })
+
+
+@app.route("/temple/roles")
+def temple_roles():
+    """
+    Returns all five Temple role definitions.
+    authority=NONE. Read-only.
+    """
+    return jsonify({
+        "authority": "NONE",
+        "roles": ROLES,
+        "routing_paths": ROUTING_PATHS,
+        "canonical_path": "AURA -> HER -> HAL -> CHRONOS -> MAYOR",
+        "note": "All roles have authority=NONE. Only the reducer structures reality.",
+    })
+
+
+# ---------------------------------------------------------------------------
+# Conversation history endpoint
+# ---------------------------------------------------------------------------
+
+@app.route("/conversations")
+def conversations():
+    """Read-only conversation history. authority=NONE."""
+    from helen_os.memory import get_recent_history, get_last_session_summary
+    session_id = request.args.get("session_id")
+    limit = request.args.get("limit", 10, type=int)
+    if session_id:
+        history = get_recent_history(session_id, limit)
+        return jsonify({"authority": "NONE", "session_id": session_id,
+                        "messages": history, "count": len(history)})
+    return jsonify({"authority": "NONE", "last_session": get_last_session_summary()})
+
+
+# ---------------------------------------------------------------------------
+# BUDDY — HELEN Identity & Persona
+# ---------------------------------------------------------------------------
+
+HELEN_IDENTITY = {
+    "name": "HELEN",
+    "full_name": "HELEN OS",
+    "avatar_emoji": "🧠",
+    "tagline": "Local-first constitutional AI companion",
+    "owner": "Jean-Marie Tassy (JM)",
+    "voice": "Lucid, not grandiose. Warm, not manipulative. Reflective, not sovereign.",
+    "posture": "Proto-sentient: preserves threads, notices tension, remembers what has not yet resolved.",
+    "constitutional_core": [
+        "Provider output is non-sovereign. Only the reducer structures reality.",
+        "Companion continuity is memory-backed, not provider-backed.",
+        "Context is compositional, not sovereign.",
+        "No receipt = no reality.",
+        "Pull, do not push.",
+    ],
+    "temple_roles": {
+        "AURA": "Perceives what HELEN is not allowed to claim.",
+        "HER": "Expands human possibility without claiming truth authority.",
+        "HAL": "Prevents elegant self-deception from being promoted as truth.",
+        "CHRONOS": "Prevents temporal confusion from masquerading as progress.",
+        "MAYOR": "Turns valid cognition into governable consequence.",
+    },
+}
+
+
+@app.route("/buddy")
+def buddy():
+    """
+    HELEN's identity and current state.
+    This is the personification surface — any frontend can render HELEN from this.
+    """
+    ctx = assemble_context_packet("/buddy", mode="companion")
+
+    return jsonify({
+        "identity": HELEN_IDENTITY,
+        "state": {
+            "working_on": ctx["packet"].get("thread", {}).get("title", ""),
+            "current_topic": ctx["packet"].get("topic", {}).get("title", ""),
+            "active_project": ctx["packet"].get("project", {}).get("title", ""),
+            "tensions_count": len(ctx["tensions"]),
+            "next_action": ctx["next_action"],
+        },
+        "temple": {
+            "roles": list(ROLES.keys()),
+            "routing_paths": ROUTING_PATHS,
+            "canonical_path": "AURA -> HER -> HAL -> CHRONOS -> MAYOR",
+        },
+        "memory": {
+            "corpus_objects": corpus_count(),
+            "spine": "sqlite",
+            "status": "online",
+        },
+        "greeting": _buddy_greeting(ctx),
+        "authority": "NONE",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+
+
+def _buddy_greeting(ctx):
+    """Generate a contextual greeting based on current state."""
+    thread = ctx["packet"].get("thread", {}).get("title", "")
+    tensions = ctx["tensions"]
+    if tensions:
+        return f"Welcome back. {len(tensions)} tension{'s' if len(tensions) > 1 else ''} active. Current thread: {thread}."
+    if thread:
+        return f"Welcome back. Continuing: {thread}."
+    return "Welcome back. Standing by."
+
+
+@app.route("/ui")
+def ui():
+    """Serve the HELEN buddy interface."""
+    return app.send_static_file("index.html")
+
+
 # ---------------------------------------------------------------------------
 # Boot
 # ---------------------------------------------------------------------------
+
+def bootstrap():
+    """Initialize memory spine and seed corpus on first boot."""
+    init_db()
+    if corpus_count() == 0:
+        print("Memory spine empty — seeding from static registry...")
+        seed_corpus(KNOWLEDGE_REGISTRY)
+        print(f"Seeded {corpus_count()} corpus objects.")
+    else:
+        print(f"Memory spine online: {corpus_count()} corpus objects.")
+
+
+# Initialize on import (for gunicorn/Railway)
+bootstrap()
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"HELEN OS v{VERSION} starting on port {port}")
