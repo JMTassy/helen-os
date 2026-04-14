@@ -9,10 +9,16 @@ Deployed on Railway. Public API.
 """
 
 import os
+import sys
 import json
 import hashlib
 import time
 from datetime import datetime, timezone
+
+print(f"[HELEN BOOT] Python {sys.version}", flush=True)
+print(f"[HELEN BOOT] CWD: {os.getcwd()}", flush=True)
+print(f"[HELEN BOOT] PORT: {os.environ.get('PORT', 'not set')}", flush=True)
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from helen_os.memory import (
