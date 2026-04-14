@@ -8,8 +8,9 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'SF Pro', -apple-system, sans-serif; background: #0d1117; color: #e6edf3; height: 100vh; display: flex; flex-direction: column; }
 .header { padding: 12px 20px; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 12px; }
-.header .logo { font-size: 24px; }
-.header h1 { font-size: 16px; font-weight: 600; }
+.header .logo { font-size: 24px; animation: pulse 3s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 0.8; } 50% { opacity: 1; } }
+.header h1 { font-size: 16px; font-weight: 600; background: linear-gradient(135deg, #ff6b4a, #e6edf3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .header .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #1a3a2a; color: #3fb950; }
 .main { flex: 1; display: flex; overflow: hidden; }
 .sidebar { width: 260px; border-right: 1px solid #21262d; padding: 16px; overflow-y: auto; }
@@ -181,7 +182,13 @@ async function sendMessage() {
     const d = await r.json();
 
     if (d.choices && d.choices[0]) {
-      const reply = d.choices[0].message.content;
+      let reply = d.choices[0].message.content;
+      // Filter system prompt echoes
+      reply = reply.replace(/^As HELEN[^.]*\.\s*/i, '');
+      reply = reply.replace(/^(In |As |You are )?(companion|temple|oracle|mayor) mode[^.]*\.\s*/i, '');
+      reply = reply.replace(/\[?(slow|soft|lower-pitch|exhale|breath|whisper|sigh|chuckle)\]?\s*/gi, '');
+      reply = reply.replace(/^I respond:\s*/i, '');
+      reply = reply.trim();
       chatHistory.push({role: 'assistant', content: reply});
       addMessage('assistant', reply, `${d.helen_provider || model} · ${d.helen_elapsed || '?'}s · authority=NONE`);
     } else if (d.error) {

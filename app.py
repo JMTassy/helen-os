@@ -21,8 +21,8 @@ from helen_os.memory import (
     SALIENCE_W, PRIORITY_W, STANCE_W,
 )
 from helen_os.temple import (
-    HELEN_TEMPLE_PROMPT, ROLES, ROUTING_PATHS,
-    classify_routing, get_routing_path,
+    HELEN_TEMPLE_PROMPT, ROLES, ROUTING_PATHS, DISTRICT_PROMPTS,
+    classify_routing, get_routing_path, build_district_prompt,
 )
 
 # ---------------------------------------------------------------------------
@@ -1053,14 +1053,8 @@ def openai_compat_chat():
     ctx = assemble_context_packet(user_msg)
     context_suffix = _context_suffix(ctx)
 
-    # Get district-specific persona
-    district_prompts = {
-        "companion": HELEN_SYSTEM_PROMPT,
-        "temple": HELEN_SYSTEM_PROMPT + "\n\nYou are in TEMPLE mode. Explore freely. Generate hypotheses. No claims. authority=NONE.",
-        "oracle": HELEN_SYSTEM_PROMPT + "\n\nYou are in ORACLE mode. Evaluate claims. Apply pressure. Evidence-first. authority=NONE.",
-        "mayor": HELEN_SYSTEM_PROMPT + "\n\nYou are in MAYOR mode. Review readiness. Check completeness. No admission power. authority=NONE.",
-    }
-    system_prompt = district_prompts.get(mode, HELEN_SYSTEM_PROMPT) + "\n\n" + context_suffix
+    # Build district-specific persona from frozen prompts
+    system_prompt = build_district_prompt(mode) + "\n\n" + context_suffix
 
     # Build conversation history for provider
     history = []
