@@ -107,6 +107,39 @@ PROVIDERS = {
 }
 
 # ---------------------------------------------------------------------------
+# Provider health cache — circuit breaker (P4)
+# ---------------------------------------------------------------------------
+from collections import defaultdict
+
+_PROVIDER_HEALTH = defaultdict(lambda: {"failures": 0, "last_failure": 0, "dead": False})
+_HEALTH_THRESHOLD = 3       # consecutive failures → circuit open
+_HEALTH_RECOVERY = 300      # 5 min cooldown
+
+
+def _mark_provider_failed(key):
+    h = _PROVIDER_HEALTH[key]
+    h["failures"] += 1
+    h["last_failure"] = time.time()
+    if h["failures"] >= _HEALTH_THRESHOLD:
+        h["dead"] = True
+
+
+def _provider_available(key):
+    h = _PROVIDER_HEALTH[key]
+    if not h["dead"]:
+        return True
+    if time.time() - h["last_failure"] > _HEALTH_RECOVERY:
+        h["failures"] = 0
+        h["dead"] = False
+        return True
+    return False
+
+
+def _mark_provider_ok(key):
+    _PROVIDER_HEALTH[key] = {"failures": 0, "last_failure": 0, "dead": False}
+
+
+# ---------------------------------------------------------------------------
 # HELEN Knowledge Registry (simplified for deployed version)
 # Constitutional corpus: gives HELEN internal order of significance
 # ---------------------------------------------------------------------------
@@ -415,19 +448,32 @@ def call_google_ai(message, provider_key, history=None, system_prompt=None):
 
 
 def call_provider(provider_key, message, history=None, system_prompt=None):
-    """Route to the correct provider call function. Non-sovereign."""
+    """Route to the correct provider call function. Non-sovereign. Circuit-breaker aware."""
     cfg = PROVIDERS.get(provider_key)
     if not cfg:
         return None, f"Unknown provider: {provider_key}"
 
+    # Circuit breaker check (P4)
+    if not _provider_available(provider_key):
+        return None, f"{provider_key} circuit open (cooldown after repeated failures)"
+
     api_type = cfg.get("api_type", "")
     if api_type == "anthropic":
-        return call_claude(message, history, system_prompt=system_prompt)
+        result, error = call_claude(message, history, system_prompt=system_prompt)
     elif api_type == "google_ai":
-        return call_google_ai(message, provider_key, history, system_prompt=system_prompt)
+        result, error = call_google_ai(message, provider_key, history, system_prompt=system_prompt)
     elif api_type == "openai_compat":
-        return call_openai_compat(message, provider_key, history, system_prompt=system_prompt)
-    return None, f"No API adapter for provider: {provider_key}"
+        result, error = call_openai_compat(message, provider_key, history, system_prompt=system_prompt)
+    else:
+        return None, f"No API adapter for provider: {provider_key}"
+
+    # Update health cache
+    if error and error in ("TIMEOUT", "CONNECTION_ERROR"):
+        _mark_provider_failed(provider_key)
+    elif not error:
+        _mark_provider_ok(provider_key)
+
+    return result, error
 
 
 # ---------------------------------------------------------------------------
@@ -559,11 +605,39 @@ def health():
 
 @app.route("/status")
 def status():
-    """Detailed system status."""
+    """Detailed system status with memory and operational diagnostics."""
     providers_online = {}
     for key, cfg in PROVIDERS.items():
         env = cfg.get("env_key")
         providers_online[key] = env is None or bool(os.environ.get(env, ""))
+
+    # Memory spine stats
+    try:
+        from helen_os.memory import _connect
+        conn = _connect()
+        corpus_n = conn.execute("SELECT COUNT(*) FROM corpus WHERE superseded_by IS NULL").fetchone()[0]
+        conv_n = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
+        thread_n = conn.execute("SELECT COUNT(*) FROM threads WHERE status='active'").fetchone()[0]
+        session_n = conn.execute("SELECT COUNT(*) FROM sessions WHERE ended_at IS NOT NULL").fetchone()[0]
+        last_chat = conn.execute("SELECT MAX(timestamp) FROM conversations").fetchone()[0]
+        conn.close()
+    except Exception:
+        corpus_n = conv_n = thread_n = session_n = 0
+        last_chat = None
+
+    # Ollama models (if local)
+    ollama_models = []
+    if providers_online.get("ollama"):
+        try:
+            r = requests.get("http://localhost:11434/api/tags", timeout=2)
+            if r.status_code == 200:
+                ollama_models = [m.get("name", "") for m in r.json().get("models", [])]
+        except Exception:
+            pass
+
+    # Circuit breaker status
+    circuit_status = {k: {"dead": v["dead"], "failures": v["failures"]}
+                      for k, v in _PROVIDER_HEALTH.items() if v["failures"] > 0}
 
     return jsonify({
         "status": "online",
@@ -572,7 +646,15 @@ def status():
         "port": os.environ.get("PORT", 8000),
         "boot_time": BOOT_TIME,
         "providers": providers_online,
-        "corpus_objects": len(KNOWLEDGE_REGISTRY),
+        "circuit_breaker": circuit_status if circuit_status else "all_healthy",
+        "ollama_models": ollama_models[:10] if ollama_models else [],
+        "memory": {
+            "corpus_objects": corpus_n,
+            "conversations": conv_n,
+            "active_threads": thread_n,
+            "closed_sessions": session_n,
+            "last_chat": last_chat,
+        },
         "constitutional_invariant": "Only reducer-authorized decisions may mutate governed state.",
     })
 
@@ -611,7 +693,19 @@ def chat():
     # Assemble context from memory spine (non-sovereign, authority=NONE)
     ctx = assemble_context_packet(message)
     context_suffix = _context_suffix(ctx)
-    augmented_prompt = HELEN_TEMPLE_PROMPT + "\n\n" + context_suffix
+
+    # Temple routing shapes cognition (P3 — wire routing into prompt)
+    routing_path, routing_key = get_routing_path(message)
+    _ROUTING_EMPHASIS = {
+        "claim_heavy": "Apply skeptical pressure: what would prove this wrong?",
+        "replay_lineage": "Check continuity: has this pattern appeared before?",
+        "promotion": "Assess readiness: is this ready to move? What could break?",
+        "emotionally_unclear": "Notice tension: what is present but not yet sayable?",
+        "rich_ambiguous": "Full exploration: insight, expansion, skepticism, continuity, readiness.",
+    }
+    routing_suffix = f"\n[Temple: {routing_key}] {_ROUTING_EMPHASIS.get(routing_key, '')}"
+
+    augmented_prompt = HELEN_TEMPLE_PROMPT + "\n\n" + context_suffix + routing_suffix
 
     # Session management for conversation memory
     session_id = data.get("session_id", "default")
@@ -723,6 +817,18 @@ def init_helen():
     else:
         best_next = ctx["next_action"]
 
+    # Staleness analysis (P1)
+    now = datetime.now(timezone.utc)
+    for t in threads:
+        try:
+            lu = datetime.fromisoformat(t.get("last_updated", ""))
+            mins = int((now - lu).total_seconds() / 60)
+            t["staleness_minutes"] = mins
+            t["is_stale"] = mins > 1440  # > 24h
+        except Exception:
+            t["staleness_minutes"] = -1
+            t["is_stale"] = True
+
     output = {
         "identity": "HELEN OS — Local-first constitutional AI companion",
         "owner": "Jean-Marie Tassy (JM)",
@@ -733,6 +839,8 @@ def init_helen():
                 "memory_class": t.get("memory_class", "working"),
                 "current_state": t.get("current_state"),
                 "next_action": t.get("next_action"),
+                "staleness_minutes": t.get("staleness_minutes", -1),
+                "is_stale": t.get("is_stale", True),
             }
             for t in threads[:5]
         ],
@@ -983,6 +1091,39 @@ def conversations():
         return jsonify({"authority": "NONE", "session_id": session_id,
                         "messages": history, "count": len(history)})
     return jsonify({"authority": "NONE", "last_session": get_last_session_summary()})
+
+
+@app.route("/conversations/export")
+def export_conversations():
+    """Export conversation history in JSON, CSV, or Markdown. authority=NONE."""
+    from helen_os.memory import get_recent_history
+    session_id = request.args.get("session_id")
+    fmt = request.args.get("format", "json")
+    if not session_id:
+        return jsonify({"error": "session_id required"}), 400
+    messages = get_recent_history(session_id, limit=500)
+    if not messages:
+        return jsonify({"error": "No messages found for session"}), 404
+
+    if fmt == "markdown":
+        lines = [f"# Conversation: {session_id}", ""]
+        for m in messages:
+            lines.append(f"**{m['role'].upper()}** ({m.get('timestamp', '?')})")
+            lines.append(m["content"])
+            lines.append("")
+        return "\n".join(lines), 200, {"Content-Type": "text/markdown; charset=utf-8"}
+    elif fmt == "csv":
+        import csv
+        import io
+        out = io.StringIO()
+        w = csv.writer(out)
+        w.writerow(["timestamp", "role", "content", "provider"])
+        for m in messages:
+            w.writerow([m.get("timestamp", ""), m["role"], m["content"], m.get("provider", "")])
+        return out.getvalue(), 200, {"Content-Type": "text/csv; charset=utf-8"}
+    else:
+        return jsonify({"authority": "NONE", "session_id": session_id,
+                        "messages": messages, "count": len(messages)})
 
 
 # ---------------------------------------------------------------------------

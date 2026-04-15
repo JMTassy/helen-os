@@ -94,6 +94,8 @@ body.district-mayor     { --avatar-glow: #3fb950; --avatar-shadow: rgba(63,185,8
 .district-btn { font-size: 11px; padding: 4px 10px; border-radius: 12px; border: 1px solid #30363d; background: transparent; color: #8b949e; cursor: pointer; transition: all 0.3s; }
 .district-btn.active { background: #1f6feb; color: white; border-color: #1f6feb; }
 .district-btn:hover { border-color: #8b949e; }
+.scroll-bottom { position: fixed; bottom: 80px; right: 30px; z-index: 100; display: none; }
+.scroll-bottom button { background: #1f6feb; border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: white; font-size: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
 </style>
 </head>
 <body class="district-companion">
@@ -126,6 +128,7 @@ body.district-mayor     { --avatar-glow: #3fb950; --avatar-shadow: rgba(63,185,8
     </div>
   </div>
 </div>
+<div class="scroll-bottom" id="scroll-btn"><button onclick="document.getElementById('messages').scrollTop=999999">↓</button></div>
 
 <script>
 const API = window.location.origin;
@@ -225,9 +228,9 @@ function switchDistrict(d, btn) {
 }
 
 function addMessage(role, text, meta) {
+  const now = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   const div = document.createElement('div');
   div.className = `msg ${role}`;
-  // Sanitize then render markdown for assistant, plain escape for user
   let rendered;
   if (role === 'assistant' && typeof marked !== 'undefined') {
     rendered = DOMPurify.sanitize(marked.parse(text));
@@ -236,10 +239,21 @@ function addMessage(role, text, meta) {
     tmp.textContent = text;
     rendered = tmp.innerHTML;
   }
-  div.innerHTML = `<div class="bubble">${rendered}</div>${meta ? `<div class="meta">${meta}</div>` : ''}`;
-  document.getElementById('messages').appendChild(div);
-  document.getElementById('messages').scrollTop = 999999;
+  const metaStr = meta ? `${meta} · ${now}` : now;
+  div.innerHTML = `<div class="bubble">${rendered}</div><div class="meta">${metaStr}</div>`;
+  const msgs = document.getElementById('messages');
+  msgs.appendChild(div);
+  msgs.scrollTop = 999999;
 }
+
+// Scroll button visibility
+document.addEventListener('DOMContentLoaded', () => {
+  const msgs = document.getElementById('messages');
+  if (msgs) msgs.addEventListener('scroll', () => {
+    const atBottom = msgs.scrollHeight - msgs.scrollTop <= msgs.clientHeight + 60;
+    document.getElementById('scroll-btn').style.display = atBottom ? 'none' : 'block';
+  });
+});
 
 async function sendMessage() {
   const input = document.getElementById('input');
@@ -256,9 +270,15 @@ async function sendMessage() {
   sendBtn.textContent = '...';
   input.disabled = true;
 
-  // Avatar: thinking state
+  // Avatar: thinking state + timeout recovery (P2)
   avatar.classList.add('thinking');
   avatarLabel.textContent = 'thinking...';
+  const timeoutId = setTimeout(() => {
+    avatarLabel.textContent = 'slow...';
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Retry';
+    input.disabled = false;
+  }, 30000);
 
   try {
     const r = await fetch(API + '/v1/chat/completions', {
@@ -273,6 +293,7 @@ async function sendMessage() {
     const d = await r.json();
 
     // Avatar: back to resting
+    clearTimeout(timeoutId);
     avatar.classList.remove('thinking');
     avatarLabel.textContent = currentDistrict;
 
@@ -289,6 +310,7 @@ async function sendMessage() {
       addMessage('assistant', `Error: ${d.error.message || d.error}`, 'error');
     }
   } catch (e) {
+    clearTimeout(timeoutId);
     avatar.classList.remove('thinking');
     avatarLabel.textContent = currentDistrict;
     addMessage('assistant', `Connection error: ${e.message}`, 'error');
