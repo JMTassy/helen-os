@@ -1327,6 +1327,151 @@ def last_session():
 
 
 # ---------------------------------------------------------------------------
+# Computer-Use Proposals — non-sovereign, approval-gated
+# ---------------------------------------------------------------------------
+
+COMPUTER_USE_RISK = {
+    "screenshot": {"risk": "low", "needs_approval": False},
+    "read_page": {"risk": "low", "needs_approval": False},
+    "navigate": {"risk": "medium", "needs_approval": True},
+    "click": {"risk": "medium", "needs_approval": True},
+    "type": {"risk": "high", "needs_approval": True},
+}
+
+
+@app.route("/v1/computer-action/propose", methods=["POST"])
+def propose_computer_action():
+    """
+    Propose a computer action. Non-sovereign, approval-gated.
+    HELEN may propose. Only user approval + reducer validation may execute.
+    """
+    data = request.get_json(silent=True) or {}
+    action_type = data.get("action_type", "")
+    target = data.get("target", "")
+    justification = data.get("justification", "")
+    expected = data.get("expected_outcome", "")
+
+    if action_type not in COMPUTER_USE_RISK:
+        return jsonify({
+            "error": f"Unknown action: {action_type}. Valid: {list(COMPUTER_USE_RISK.keys())}",
+            "authority": "NONE",
+        }), 400
+
+    if not target or not justification:
+        return jsonify({"error": "target and justification required", "authority": "NONE"}), 400
+
+    risk = COMPUTER_USE_RISK[action_type]
+    proposal_id = f"computer_{action_type}_{int(time.time())}"
+
+    # Shell is always denied
+    if action_type == "shell":
+        return jsonify({
+            "proposal_id": proposal_id,
+            "decision": "REJECTED",
+            "reason": "Shell execution is forbidden by constitutional policy",
+            "authority": "NONE",
+        }), 403
+
+    decision = "ADMITTED" if not risk["needs_approval"] else "DEFERRED"
+
+    return jsonify({
+        "proposal_id": proposal_id,
+        "action_type": action_type,
+        "target": target,
+        "justification": justification,
+        "expected_outcome": expected,
+        "risk_level": risk["risk"],
+        "decision": decision,
+        "requires_approval": risk["needs_approval"],
+        "authority": "NONE",
+        "ledger_required": True,
+    })
+
+
+@app.route("/v1/computer-action/approve", methods=["POST"])
+def approve_computer_action():
+    """Approve a previously proposed computer action."""
+    data = request.get_json(silent=True) or {}
+    proposal_id = data.get("proposal_id", "")
+    approved = data.get("user_approval", False)
+
+    if not proposal_id:
+        return jsonify({"error": "proposal_id required"}), 400
+
+    return jsonify({
+        "approval_id": f"approval_{int(time.time())}",
+        "proposal_id": proposal_id,
+        "user_approval": approved,
+        "execution_ready": approved,
+        "authority": "NONE",
+    })
+
+
+# ---------------------------------------------------------------------------
+# /init/live — Calibrated three-section output (TENSIONS / NOW / WORKING ON)
+# ---------------------------------------------------------------------------
+
+@app.route("/init/live")
+def init_live():
+    """
+    /init HELEN — calibrated live output.
+    Three sections, no duplication:
+      TENSIONS: what blocks (critical + immediate)
+      NOW: what to do in the next 10 minutes
+      WORKING ON: strategic thread context
+    """
+    from helen_os.memory import get_active_threads, get_last_closed_session, get_memory_items
+
+    threads = get_active_threads(limit=10)
+    last_session = get_last_closed_session()
+    committed = get_memory_items(memory_class="committed", limit=5)
+
+    # Tensions: threads with unresolved items
+    tensions = [
+        {"thread": t["title"], "issue": t["unresolved"]}
+        for t in threads if t.get("unresolved")
+    ]
+
+    # NOW: top working thread's next_action
+    working = [t for t in threads if t.get("memory_class") == "working"]
+    top = working[0] if working else (threads[0] if threads else None)
+    now_action = top.get("next_action", "") if top else ""
+    now_thread = top.get("title", "") if top else ""
+
+    # WORKING ON: top committed or overall top thread
+    committed_threads = [t for t in threads if t.get("memory_class") == "committed"]
+    strategic = committed_threads[0] if committed_threads else top
+
+    output_lines = ["HELEN OS — /init live", ""]
+
+    if tensions:
+        output_lines.append("TENSIONS:")
+        for t in tensions:
+            output_lines.append(f"  ! {t['thread']}: {t['issue']}")
+        output_lines.append("")
+
+    if now_action:
+        output_lines.append(f"NOW: {now_action}")
+        if now_thread:
+            output_lines.append(f"     ({now_thread})")
+        output_lines.append("")
+
+    if strategic:
+        output_lines.append(f"WORKING ON: {strategic.get('title', '')}")
+        if strategic.get("current_state"):
+            output_lines.append(f"  State: {strategic['current_state']}")
+        output_lines.append("")
+
+    if last_session:
+        output_lines.append(f"LAST SESSION: {last_session.get('summary', 'No summary')}")
+        output_lines.append("")
+
+    output_lines.append("authority: NONE")
+
+    return "\n".join(output_lines), 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+# ---------------------------------------------------------------------------
 # Boot
 # ---------------------------------------------------------------------------
 
