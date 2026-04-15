@@ -129,10 +129,24 @@ body.district-mayor     { --avatar-glow: #3fb950; --avatar-shadow: rgba(63,185,8
 
 <script>
 const API = window.location.origin;
+const SESSION_ID = 'airi-' + (localStorage.getItem('helen_session') || (() => { const s = Date.now().toString(36); localStorage.setItem('helen_session', s); return s; })());
 let currentDistrict = 'companion';
 let chatHistory = [];
 const avatar = document.getElementById('avatar');
 const avatarLabel = document.getElementById('avatar-label');
+
+async function loadChatHistory() {
+  try {
+    const r = await fetch(API + '/conversations?session_id=' + SESSION_ID + '&limit=20');
+    const d = await r.json();
+    if (d.messages && d.messages.length) {
+      for (const m of d.messages) {
+        chatHistory.push({role: m.role, content: m.content});
+        addMessage(m.role, m.content, m.role === 'assistant' ? `${m.provider || '?'} · restored` : undefined);
+      }
+    }
+  } catch (e) { /* no history available */ }
+}
 
 async function loadContext() {
   try {
@@ -253,6 +267,7 @@ async function sendMessage() {
       body: JSON.stringify({
         model: model,
         messages: chatHistory.slice(-10),
+        session_id: SESSION_ID,
       }),
     });
     const d = await r.json();
@@ -286,6 +301,7 @@ async function sendMessage() {
 }
 
 loadContext();
+loadChatHistory();
 </script>
 </body>
 </html>

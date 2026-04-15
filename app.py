@@ -15,11 +15,8 @@ import hashlib
 import time
 from datetime import datetime, timezone
 
-# Bootstrap env vars (temporary — move to Railway Variables and delete railway_env.py)
-try:
-    import railway_env  # noqa: F401
-except ImportError:
-    pass
+# API keys must be set via environment variables (Railway Variables, .env, or export)
+# Never commit keys to code. See Railway dashboard → Variables.
 
 print(f"[HELEN BOOT] Python {sys.version}", flush=True)
 print(f"[HELEN BOOT] CWD: {os.getcwd()}", flush=True)
@@ -1179,6 +1176,11 @@ def openai_compat_chat():
         return jsonify({
             "error": {"message": error, "type": "provider_error"},
         }), 502
+
+    # Persist conversation to memory spine (constitutional: memory-backed continuity)
+    from helen_os.memory import save_exchange
+    session_id = data.get("session_id", "airi-default")
+    save_exchange(session_id, user_msg, response_text, provider=selected)
 
     # Return OpenAI-compatible response format
     return jsonify({
