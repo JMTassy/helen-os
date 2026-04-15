@@ -8,8 +8,6 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'SF Pro', -apple-system, sans-serif; background: #0d1117; color: #e6edf3; height: 100vh; display: flex; flex-direction: column; }
 .header { padding: 12px 20px; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 12px; }
-.header .logo { font-size: 24px; animation: pulse 3s ease-in-out infinite; }
-@keyframes pulse { 0%,100% { opacity: 0.8; } 50% { opacity: 1; } }
 .header h1 { font-size: 16px; font-weight: 600; background: linear-gradient(135deg, #ff6b4a, #e6edf3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .header .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #1a3a2a; color: #3fb950; }
 .main { flex: 1; display: flex; overflow: hidden; }
@@ -22,6 +20,58 @@ body { font-family: 'SF Pro', -apple-system, sans-serif; background: #0d1117; co
 .ctx-item.tension { border-left: 3px solid #f85149; padding-left: 10px; color: #f85149; }
 .ctx-item .label { color: #8b949e; font-size: 11px; }
 .chat-area { flex: 1; display: flex; flex-direction: column; }
+
+/* --- AIRI Avatar --- */
+.avatar-zone { display: flex; justify-content: center; align-items: center; padding: 24px 0 12px; flex-shrink: 0; }
+.avatar {
+  position: relative; width: 80px; height: 80px; border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, var(--avatar-glow), var(--avatar-core));
+  box-shadow: 0 0 30px var(--avatar-glow), 0 0 60px var(--avatar-shadow);
+  animation: breathe 4s ease-in-out infinite;
+  transition: all 0.6s ease;
+  cursor: default;
+}
+.avatar::after {
+  content: ''; position: absolute; inset: -6px; border-radius: 50%;
+  border: 1px solid var(--avatar-ring);
+  opacity: 0.4; animation: ring-pulse 4s ease-in-out infinite;
+}
+.avatar.thinking {
+  animation: think-pulse 1.2s ease-in-out infinite;
+  box-shadow: 0 0 40px var(--avatar-glow), 0 0 80px var(--avatar-shadow);
+}
+.avatar-label {
+  position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%);
+  font-size: 10px; color: #8b949e; letter-spacing: 2px; text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* District color themes */
+:root {
+  --avatar-core: #1a1a2e;
+  --avatar-glow: #ff6b4a;
+  --avatar-shadow: rgba(255, 107, 74, 0.3);
+  --avatar-ring: rgba(255, 107, 74, 0.5);
+}
+body.district-companion { --avatar-glow: #ff6b4a; --avatar-shadow: rgba(255,107,74,0.3); --avatar-ring: rgba(255,107,74,0.5); }
+body.district-temple    { --avatar-glow: #a855f7; --avatar-shadow: rgba(168,85,247,0.3); --avatar-ring: rgba(168,85,247,0.5); }
+body.district-oracle    { --avatar-glow: #38bdf8; --avatar-shadow: rgba(56,189,248,0.3); --avatar-ring: rgba(56,189,248,0.5); }
+body.district-mayor     { --avatar-glow: #3fb950; --avatar-shadow: rgba(63,185,80,0.3); --avatar-ring: rgba(63,185,80,0.5); }
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+@keyframes think-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+@keyframes ring-pulse {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.08); }
+}
+
+/* --- Chat --- */
 .messages { flex: 1; overflow-y: auto; padding: 20px; }
 .msg { margin-bottom: 16px; max-width: 80%; }
 .msg.user { margin-left: auto; }
@@ -34,15 +84,14 @@ body { font-family: 'SF Pro', -apple-system, sans-serif; background: #0d1117; co
 .input-bar button { background: #1f6feb; color: white; border: none; border-radius: 8px; padding: 10px 16px; cursor: pointer; font-size: 14px; }
 .input-bar button:hover { background: #388bfd; }
 .district-bar { display: flex; gap: 4px; margin-bottom: 12px; }
-.district-btn { font-size: 11px; padding: 4px 10px; border-radius: 12px; border: 1px solid #30363d; background: transparent; color: #8b949e; cursor: pointer; }
+.district-btn { font-size: 11px; padding: 4px 10px; border-radius: 12px; border: 1px solid #30363d; background: transparent; color: #8b949e; cursor: pointer; transition: all 0.3s; }
 .district-btn.active { background: #1f6feb; color: white; border-color: #1f6feb; }
 .district-btn:hover { border-color: #8b949e; }
 </style>
 </head>
-<body>
+<body class="district-companion">
 
 <div class="header">
-  <span class="logo">🧠</span>
   <h1>HELEN OS</h1>
   <span class="badge" id="status-badge">connecting...</span>
 </div>
@@ -50,14 +99,19 @@ body { font-family: 'SF Pro', -apple-system, sans-serif; background: #0d1117; co
 <div class="main">
   <div class="sidebar" id="sidebar">
     <div class="district-bar">
-      <button class="district-btn active" onclick="switchDistrict('companion')">Companion</button>
-      <button class="district-btn" onclick="switchDistrict('temple')">Temple</button>
-      <button class="district-btn" onclick="switchDistrict('oracle')">Oracle</button>
-      <button class="district-btn" onclick="switchDistrict('mayor')">Mayor</button>
+      <button class="district-btn active" data-district="companion" onclick="switchDistrict('companion',this)">Companion</button>
+      <button class="district-btn" data-district="temple" onclick="switchDistrict('temple',this)">Temple</button>
+      <button class="district-btn" data-district="oracle" onclick="switchDistrict('oracle',this)">Oracle</button>
+      <button class="district-btn" data-district="mayor" onclick="switchDistrict('mayor',this)">Mayor</button>
     </div>
     <div id="context-drawer">Loading context...</div>
   </div>
   <div class="chat-area">
+    <div class="avatar-zone">
+      <div class="avatar" id="avatar">
+        <span class="avatar-label" id="avatar-label">companion</span>
+      </div>
+    </div>
     <div class="messages" id="messages"></div>
     <div class="input-bar">
       <input type="text" id="input" placeholder="Talk to HELEN..." onkeydown="if(event.key==='Enter')sendMessage()">
@@ -70,6 +124,8 @@ body { font-family: 'SF Pro', -apple-system, sans-serif; background: #0d1117; co
 const API = window.location.origin;
 let currentDistrict = 'companion';
 let chatHistory = [];
+const avatar = document.getElementById('avatar');
+const avatarLabel = document.getElementById('avatar-label');
 
 async function loadContext() {
   try {
@@ -85,20 +141,18 @@ async function loadContext() {
 
     let html = '';
 
-    // Threads
     if (init.top_threads && init.top_threads.length) {
       html += '<div class="ctx-block"><h3>Threads</h3>';
       for (const t of init.top_threads) {
         const cls = t.memory_class === 'committed' ? 'committed' : 'working';
         html += `<div class="ctx-item ${cls}">
           <div>${t.title}</div>
-          ${t.next_action ? `<div class="label">→ ${t.next_action}</div>` : ''}
+          ${t.next_action ? `<div class="label">\u2192 ${t.next_action}</div>` : ''}
         </div>`;
       }
       html += '</div>';
     }
 
-    // Tensions
     if (init.unresolved_tensions && init.unresolved_tensions.length) {
       html += '<div class="ctx-block"><h3>Tensions</h3>';
       for (const u of init.unresolved_tensions) {
@@ -107,7 +161,6 @@ async function loadContext() {
       html += '</div>';
     }
 
-    // Last session
     if (init.recent_movement && init.recent_movement.last_session) {
       const s = init.recent_movement.last_session;
       html += '<div class="ctx-block"><h3>Last Session</h3>';
@@ -115,14 +168,12 @@ async function loadContext() {
       html += '</div>';
     }
 
-    // Next action
     if (init.best_next_action) {
       html += '<div class="ctx-block"><h3>Next Action</h3>';
       html += `<div class="ctx-item committed">${init.best_next_action}</div>`;
       html += '</div>';
     }
 
-    // Committed memory
     if (init.committed_memory && init.committed_memory.length) {
       html += '<div class="ctx-block"><h3>Committed Memory</h3>';
       for (const m of init.committed_memory) {
@@ -133,7 +184,6 @@ async function loadContext() {
 
     document.getElementById('context-drawer').innerHTML = html;
 
-    // Add greeting
     if (init.best_next_action) {
       addMessage('assistant', `Welcome back. ${init.unresolved_tensions?.length || 0} tensions active. Next: ${init.best_next_action}`);
     }
@@ -144,10 +194,12 @@ async function loadContext() {
   }
 }
 
-function switchDistrict(d) {
+function switchDistrict(d, btn) {
   currentDistrict = d;
   document.querySelectorAll('.district-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  btn.classList.add('active');
+  document.body.className = 'district-' + d;
+  avatarLabel.textContent = d;
   addMessage('assistant', `Switched to ${d} mode.`);
 }
 
@@ -170,6 +222,10 @@ async function sendMessage() {
 
   const model = currentDistrict === 'companion' ? 'helen' : `helen-${currentDistrict}`;
 
+  // Avatar: thinking state
+  avatar.classList.add('thinking');
+  avatarLabel.textContent = 'thinking...';
+
   try {
     const r = await fetch(API + '/v1/chat/completions', {
       method: 'POST',
@@ -181,9 +237,12 @@ async function sendMessage() {
     });
     const d = await r.json();
 
+    // Avatar: back to resting
+    avatar.classList.remove('thinking');
+    avatarLabel.textContent = currentDistrict;
+
     if (d.choices && d.choices[0]) {
       let reply = d.choices[0].message.content;
-      // Filter system prompt echoes
       reply = reply.replace(/^As HELEN[^.]*\.\s*/i, '');
       reply = reply.replace(/^(In |As |You are )?(companion|temple|oracle|mayor) mode[^.]*\.\s*/i, '');
       reply = reply.replace(/\[?(slow|soft|lower-pitch|exhale|breath|whisper|sigh|chuckle)\]?\s*/gi, '');
@@ -195,6 +254,8 @@ async function sendMessage() {
       addMessage('assistant', `Error: ${d.error.message || d.error}`, 'error');
     }
   } catch (e) {
+    avatar.classList.remove('thinking');
+    avatarLabel.textContent = currentDistrict;
     addMessage('assistant', `Connection error: ${e.message}`, 'error');
   }
 }

@@ -50,6 +50,15 @@ BOOT_TIME = datetime.now(timezone.utc).isoformat()
 # Provider configuration (non-sovereign layer)
 # ---------------------------------------------------------------------------
 PROVIDERS = {
+    "ollama": {
+        "name": "Ollama Local (gemma4)",
+        "base_url": "http://localhost:11434/v1/chat/completions",
+        "env_key": None,  # No key needed — local
+        "model": "gemma4",
+        "api_type": "openai_compat",
+        "strengths": ["local", "private", "fast", "no_cost"],
+        "local": True,
+    },
     "claude": {
         "name": "Anthropic Claude",
         "base_url": "https://api.anthropic.com/v1/messages",
@@ -256,10 +265,19 @@ def select_provider(message, preferred=None):
             if key is None or os.environ.get(key):
                 return provider
 
-    # Default cascade: claude > gemma > gemini > gpt > grok > qwen
-    for p in ["claude", "gemma", "gemini", "gpt", "grok", "qwen"]:
+    # Default cascade: ollama (local) > claude > gemma > gemini > gpt > grok > qwen
+    for p in ["ollama", "claude", "gemma", "gemini", "gpt", "grok", "qwen"]:
         key = PROVIDERS[p].get("env_key")
-        if key is None or os.environ.get(key):
+        if key is None:
+            # Local provider — check if reachable
+            if PROVIDERS[p].get("local"):
+                try:
+                    requests.get("http://localhost:11434/api/tags", timeout=1)
+                    return p
+                except Exception:
+                    continue
+            return p
+        elif os.environ.get(key):
             return p
 
     # No provider has a key configured
@@ -340,18 +358,18 @@ def call_openai_compat(message, provider_key, history=None, system_prompt=None):
     messages.append({"role": "user", "content": message})
 
     try:
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         resp = requests.post(
             cfg["base_url"],
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             json={
                 "model": cfg["model"],
                 "messages": messages,
                 "max_tokens": 2048,
             },
-            timeout=30,
+            timeout=120 if cfg.get("local") else 30,
         )
         data = resp.json()
         if "choices" in data and len(data["choices"]) > 0:
