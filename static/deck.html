@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HELEN OS × CONQUEST — Deck V3</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Inter:wght@300;400;600&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0B1020;--surface:#121A2F;--gold:#C9A24A;--cream:#F3EFE6;--blue:#5DA9E9;--red:#B94A48;--muted:rgba(243,239,230,0.5)}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--cream);overflow-x:hidden}
+.slide{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:60px 80px;position:relative;border-bottom:1px solid rgba(201,162,74,0.15)}
+.slide::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none}
+.slide-number{position:absolute;top:30px;right:40px;font-family:'Space Grotesk';font-size:0.75rem;color:var(--muted);letter-spacing:3px}
+.footer-tag{position:absolute;bottom:24px;left:80px;font-size:0.7rem;color:var(--muted);letter-spacing:2px;text-transform:uppercase}
+h1{font-family:'Cinzel',serif;font-size:clamp(2.5rem,5vw,4rem);font-weight:900;line-height:1.15;margin-bottom:20px}
+h2{font-family:'Cinzel',serif;font-size:clamp(1.6rem,3vw,2.4rem);font-weight:700;margin-bottom:32px;color:var(--gold)}
+h3{font-family:'Cinzel',serif;font-size:1.1rem;color:var(--gold);margin-bottom:8px;letter-spacing:1px}
+.subtitle{font-size:1.1rem;color:var(--muted);max-width:700px;line-height:1.7;margin-bottom:40px}
+.big-number{font-family:'Space Grotesk';font-size:clamp(3rem,8vw,6rem);font-weight:700;color:var(--gold);line-height:1}
+.accent{color:var(--gold)}
+.blue{color:var(--blue)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin:30px 0}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin:30px 0}
+.card{background:rgba(18,26,47,0.8);border:1px solid rgba(201,162,74,0.2);border-radius:12px;padding:28px}
+.card:hover{border-color:var(--gold)}
+.card h3{margin-bottom:12px}
+.card ul{list-style:none;padding:0}
+.card li{padding:4px 0;color:var(--muted);font-size:0.9rem}
+.card li::before{content:'—';color:var(--gold);margin-right:8px}
+.band{background:rgba(201,162,74,0.08);border-left:3px solid var(--gold);padding:16px 24px;margin:30px 0;font-size:0.95rem;font-style:italic}
+.table-wrap{overflow-x:auto;margin:20px 0}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:12px 16px;color:var(--muted);font-size:0.75rem;text-transform:uppercase;letter-spacing:2px;border-bottom:1px solid rgba(201,162,74,0.2)}
+td{padding:12px 16px;border-bottom:1px solid rgba(201,162,74,0.08);font-size:0.95rem}
+td.gold{color:var(--gold);font-weight:700;font-family:'Space Grotesk'}
+.timeline{position:relative;padding-left:50px;margin:30px 0}
+.timeline::before{content:'';position:absolute;left:20px;top:0;bottom:0;width:2px;background:linear-gradient(to bottom,var(--gold),var(--blue))}
+.tl-item{position:relative;margin-bottom:28px}
+.tl-item::before{content:'';position:absolute;left:-34px;top:6px;width:10px;height:10px;border-radius:50%;background:var(--gold);border:2px solid var(--bg)}
+.tl-label{font-family:'Space Grotesk';font-size:0.8rem;color:var(--gold);letter-spacing:2px;margin-bottom:4px}
+.tl-item p{color:var(--muted);font-size:0.9rem}
+.phrase-finale{font-family:'Cinzel',serif;font-size:clamp(1.3rem,2.5vw,1.8rem);line-height:1.6;max-width:800px;text-align:center;margin:0 auto}
+.donut-visual{display:flex;align-items:center;gap:40px;margin:30px 0}
+.donut{width:160px;height:160px;border-radius:50%;background:conic-gradient(var(--blue) 0% 70%,var(--gold) 70% 100%);display:flex;align-items:center;justify-content:center}
+.donut-inner{width:100px;height:100px;border-radius:50%;background:var(--bg);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk';font-size:0.9rem;text-align:center;line-height:1.3}
+.sensitivity{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin:30px 0}
+.sens-card{text-align:center;padding:24px;border:1px solid rgba(201,162,74,0.15);border-radius:12px}
+.sens-card .big{font-family:'Space Grotesk';font-size:2rem;font-weight:700;margin:8px 0}
+.sens-card.central{border-color:var(--gold);background:rgba(201,162,74,0.05)}
+.mayor-badge{display:inline-block;padding:6px 16px;border:1px solid var(--gold);border-radius:4px;font-family:'Space Grotesk';font-size:0.75rem;letter-spacing:3px;color:var(--gold);margin-top:20px}
+@media(max-width:768px){.slide{padding:40px 24px}.grid,.grid-3,.sensitivity{grid-template-columns:1fr}.donut-visual{flex-direction:column}}
+</style>
+</head>
+<body>
+
+<!-- SLIDE 1 — COVER -->
+<div class="slide" style="text-align:center;justify-content:center;align-items:center">
+<div class="slide-number">01 / 12</div>
+<h1><span class="accent">HELEN OS</span> × <span class="blue">CONQUEST</span></h1>
+<p class="subtitle" style="text-align:center;margin:20px auto 30px">Deux actifs couplés : CONQUEST comme produit hybride, HELEN OS comme moteur de différenciation, de rétention et d'exploitation.</p>
+<div style="display:flex;gap:50px;justify-content:center;flex-wrap:wrap">
+<div><span class="big-number">2,75M€</span><br><span style="font-size:0.8rem;color:var(--muted);letter-spacing:2px">SEED ROUND</span></div>
+<div><span class="big-number">8</span><span style="font-family:'Space Grotesk';font-size:2rem;color:var(--gold)"> mois</span><br><span style="font-size:0.8rem;color:var(--muted);letter-spacing:2px">→ AUTOFINANCEMENT</span></div>
+</div>
+<div class="mayor-badge">MAYOR VERDICT : SHIP — V3</div>
+<div class="footer-tag">HELEN OS × CONQUEST</div>
+</div>
+
+<!-- SLIDE 2 — INVESTMENT THESIS -->
+<div class="slide">
+<div class="slide-number">02 / 12</div>
+<h2>Cette levée ne finance pas un concept.<br>Elle finance un système commercialisable.</h2>
+<div class="grid">
+<div class="card">
+<h3>CONQUEST — le produit</h3>
+<ul>
+<li>Jeu physique (30 000 boîtes)</li>
+<li>Application Dream / Life / Love</li>
+<li>Acquisition et monétisation</li>
+</ul>
+</div>
+<div class="card">
+<h3>HELEN OS — le moteur</h3>
+<ul>
+<li>Mémoire persistante</li>
+<li>Personnalisation par joueur</li>
+<li>Gouvernance par reçus</li>
+<li>Continuité entre sessions</li>
+</ul>
+</div>
+</div>
+<div class="band">Le moat est dans le couplage. Ni l'un ni l'autre ne se défend seul.</div>
+<div class="footer-tag">HELEN OS × CONQUEST</div>
+</div>
+
+<!-- SLIDE 3 — FUNDED / NOT FUNDED -->
+<div class="slide">
+<div class="slide-number">03 / 12</div>
+<h2>Ce que finance la levée</h2>
+<div class="grid">
+<div class="card" style="border-color:var(--gold)">
+<h3 style="color:var(--gold)">Oui</h3>
+<ul>
+<li>Produit CONQUEST (physique + app)</li>
+<li>Couche technologique HELEN OS</li>
+<li>Production 30 000 boîtes</li>
+<li>Lancement coordonné</li>
+</ul>
+</div>
+<div class="card" style="border-color:var(--red)">
+<h3 style="color:var(--red)">Non</h3>
+<ul>
+<li>Studios physiques</li>
+<li>Expansion retail</li>
+<li>Lieux CORSICA STUDIOS</li>
+<li>Diversification hors produit</li>
+</ul>
+</div>
+</div>
+<div class="band">Le capital est concentré sur le cœur de valeur. Les studios viendront après validation traction.</div>
+<div class="footer-tag">HELEN OS × CONQUEST</div>
+</div>
+
+<!-- SLIDE 4 — BUDGET -->
+<div class="slide">
+<div class="slide-number">04 / 12</div>
+<h2>Use of Funds — <span style="color:var(--cream)">2,75 M€</span></h2>
+<div class="table-wrap">
+<table>
+<tr><th>Poste</th><th>Montant</th><th>%</th></tr>
+<tr><td>Équipe partagée (20 ETP × 8 mois)</td><td class="gold">784 000 €</td><td>28,5%</td></tr>
+<tr><td>HELEN OS (kernel + gouvernance + mémoire)</td><td class="gold">500 000 €</td><td>18,2%</td></tr>
+<tr><td>CONQUEST App (Dream + Life + Love + IA)</td><td class="gold">450 000 €</td><td>16,4%</td></tr>
+<tr><td>Production physique (30 000 boîtes)</td><td class="gold">620 000 €</td><td>22,5%</td></tr>
+<tr><td>Launch (acquisition + presse)</td><td class="gold">400 000 €</td><td>14,5%</td></tr>
+</table>
+</div>
+<div class="footer-tag">HELEN OS × CONQUEST</div>
+</div>
+
+<!-- SLIDE 5 — ALLOCATION BY ASSET -->
+<div class="slide">
+<div class="slide-number">05 / 12</div>
+<h2>Deux actifs, une équipe</h2>
+<div class="donut-visual">
+<div class="donut"><div class="donut-inner"><span class="blue">70%</span><br>CONQUEST</div></div>
+<div>
+<p style="margin-bottom:16px"><span style="font-family:'Space Grotesk';font-size:1.4rem;color:var(--blue)">~1 940 K€</span> — CONQUEST capte le marché.</p>
+<p><span style="font-family:'Space Grotesk';font-size:1.4rem;color:var(--gold)">~814 K€</span> — HELEN OS augmente la valeur, la rétention et l'extensibilité.</p>
+</div>
+</div>
+<div class="band">L'équipe sert les deux actifs. L'allocation 60/40 reflète l'effort produit vs moteur.</div>
+<div class="footer-tag">HELEN OS × CONQUEST</div>
+</div>
+
+<!-- SLIDE 6 — P&L -->
+<div class="slide" style="text-align:center;align-items:center">
+<div class="slide-number">06 / 12</div>
+<h2>Compte d'exploitation canonique — 8 mois</h2>
+<div class="big-number" style="margin:20px 0">2 824 375 €</div>
+<p style="font-size:1.1rem;color:var(--muted);margin-bottom:30px">Chiffre d'affaires cible</p>
+<div class="grid-3" style="max-width:700px;margin:0 auto">
+<div class="card" style="text-align:center"><div style="font-family:'Space Grotesk';font-size:1.5rem;color:var(--gold)">947 K€</div><p style="color:var(--muted);font-size:0.85rem;margin-top:4px">Marge brute</p></div>
+<div class="card" style="text-align:center"><div style="font-family:'Space Grotesk';font-size:1.5rem;color:var(--gold)">41 K€</div><p style="color:var(--muted);font-size:0.85rem;margin-top:4px">Résultat après IS</p></div>
+<div class="card" style="text-align:center"><div style="font-family:'Space Grotesk';font-size:1.5rem;color:var(--gold)">61 K€</div><p style="color:var(--muted);font-size:0.85rem;margin-top:4px">Autofinancement</p></div>
+</div>
+<div class="band" style="max-width:700px;margin:30px auto;text-align:left">L'objectif n'est pas seulement de lancer. L'objectif est d'atteindre l'équilibre d'exploitation.</div>
+<div class="footer-tag">HELEN OS × CONQUEST</div>
+</div>
+
+<!-- SLIDE 7 — REVENUE LOGIC -->
+<div class="slide">
+<div class="slide-number">07 / 12</div>
+<h2>Comment la valeur se crée</h2>
+<div class="grid-3">
+<div class="card">
+<h3>Produit physique</h3>
+<ul>
+<li>Objet de marque</li>
+<li>Vente directe + retail</li>
+<li>Traction tangible</li>
+</ul>
+<div style="font-family:'Space Grotesk';font-size:1.3rem;color:var(--gold);margin-top:12px">1 344 K€</div>
+</div>
+<div class="card">
+<h3>Application</h3>
+<ul>
+<li>Usage récurrent</li>
+<li>Conversion freemium</li>
+<li>Engagement IA</li>
+</ul>
+<div style="font-family:'Space Grotesk';font-size:1.3rem;color:var(--blue);margin-top:12px">1 480 K€</div>
+</div>
+<div class="card">
+<h3>HELEN OS</h3>
+<ul>
+<li>Personnalisation</li>
+<li>Continuité</li>
+<li>Meilleure rétention</li>
+</ul>
+<div style="font-family:'Space Grotesk';font-size:0.9rem;color:var(--muted);margin-top:12px">Intégré dans l'app</div>
+</div>
+</div>
+<div class="band">Acquisition + rétention + monétisation. Trois moteurs, un produit.</div>
+<div class="footer-tag">HELEN OS × CONQUEST</div>
+</div>
+
+<!-- SLIDE 8 — HELEN OS VALUE -->
+<div class="slide">
+<div class="slide-number">08 / 12</div>
+<h2>Pourquoi HELEN OS compte</h2>
+<div class="grid" style="grid-template-columns:1fr 1fr 1fr;max-width:900px">
+<div class="card" style="text-align:center"><h3>Mémoire</h3><p style="color:var(--muted);font-size:0.85rem">Persistante entre sessions</p></div>
+<div class="card" style="text-align:center"><h3>Personnalisation</h3><p style="color:var(--muted);font-size:0.85rem">Chaque joueur, unique</p></div>
+<div class="card" style="text-align:center"><h3>Gouvernance</h3><p style="color:var(--muted);font-size:0.85rem">Reçus, audit trail natif</p></div>
+</div>
+<div class="band" style="margin-top:40px">HELEN n'est pas un gadget IA.<br>C'est la couche qui rend CONQUEST défendable et extensible.</div>
+<div class="footer-tag">HELEN OS × CONQUEST</div>
+</div>
+
+<!-- SLIDE 9 — DELIVERABLES -->
+<div class="slide">
+<div class="slide-number">09 / 12</div>
+<h2>À 8 mois, ce qui doit exister</h2>
+<div class="grid">
+<div class="card">
+<h3>Produit</h3>
+<ul>
+<li>30 000 boîtes produites</li>
+<li>Application opérationnelle</li>
+<li>HELEN v1 intégrée</li>
+</ul>
+</div>
+<div class="card">
+<h3>Exploitation</h3>
+<ul>
+<li>Funnel de lancement actif</li>
+<li>Premières cohortes mesurées</li>
+<li>Reporting et instrumentation</li>
+</ul>
+</div>
+</div>
+<div class="band">Un produit qui tourne. Un produit qui se vend. Un système qui s'exploite.</div>
+<div class="footer-tag">HELEN OS × CONQUEST</div>
+</div>
+
+<!-- SLIDE 10 — MONTHLY GATES -->
+<div class="slide">
+<div class="slide-number">10 / 12</div>
+<h2>8 gates mensuels</h2>
+<div class="timeline">
+<div class="tl-item"><div class="tl-label">M1</div><p>Équipe recrutée, spec gelée</p></div>
+<div class="tl-item"><div class="tl-label">M2</div><p>Alpha + premier lot 5 000 boîtes</p></div>
+<div class="tl-item"><div class="tl-label">M3</div><p>Beta fermée + governance API en prod</p></div>
+<div class="tl-item"><div class="tl-label">M4</div><p>Launch app grand public + 15 000 boîtes</p></div>
+<div class="tl-item"><div class="tl-label">M5</div><p>2 000 connexions/jour</p></div>
+<div class="tl-item"><div class="tl-label">M6</div><p>3 000 conn/j + 25 000 boîtes vendues</p></div>
+<div class="tl-item"><div class="tl-label">M7</div><p>4 000 conn/j + audit série A prêt</p></div>
+<div class="tl-item"><div class="tl-label">M8</div><p>CA cible atteint — autofinancement</p></div>
+</div>
+<p style="color:var(--muted);font-size:0.85rem;margin-top:20px">Chaque gate est observable, traçable, vérifiable. Reçu HELEN signé à chaque mois.</p>
+<div class="footer-tag">HELEN OS × CONQUEST</div>
+</div>
+
+<!-- SLIDE 11 — SENSITIVITY & RISKS -->
+<div class="slide">
+<div class="slide-number">11 / 12</div>
+<h2>Sensibilité & risques</h2>
+<div class="sensitivity">
+<div class="sens-card"><div style="color:var(--muted);font-size:0.8rem">BASSE</div><div class="big" style="color:var(--red)">2 500</div><div style="color:var(--muted);font-size:0.8rem">conn/j → ~ -50 K€</div></div>
+<div class="sens-card central"><div style="color:var(--gold);font-size:0.8rem">CENTRALE</div><div class="big" style="color:var(--gold)">4 000</div><div style="color:var(--muted);font-size:0.8rem">conn/j → +41 K€</div></div>
+<div class="sens-card"><div style="color:var(--muted);font-size:0.8rem">HAUTE</div><div class="big" style="color:var(--blue)">5 500</div><div style="color:var(--muted);font-size:0.8rem">conn/j → +180 K€</div></div>
+</div>
+<div class="grid-3" style="margin-top:30px">
+<div class="card"><h3 style="color:var(--red)">R1 — Acquisition</h3><p style="color:var(--muted);font-size:0.85rem">Launch sanctuarisé. Budget 400K concentré M3-M7.</p></div>
+<div class="card"><h3 style="color:var(--red)">R2 — Production</h3><p style="color:var(--muted);font-size:0.85rem">Double sourcing. Lot pilote 5 000 validé avant scale.</p></div>
+<div class="card"><h3 style="color:var(--red)">R3 — Conformité IA</h3><p style="color:var(--muted);font-size:0.85rem">Traçabilité HELEN native. Conforme par construction.</p></div>
+</div>
+<div class="footer-tag">HELEN OS × CONQUEST</div>
+</div>
+
+<!-- SLIDE 12 — CLOSING -->
+<div class="slide" style="text-align:center;align-items:center">
+<div class="slide-number">12 / 12</div>
+<h2>Pourquoi maintenant</h2>
+<div style="margin:30px 0;text-align:left;max-width:600px">
+<p style="margin-bottom:12px;color:var(--muted)"><span class="accent">—</span> Fenêtre encore ouverte pour les produits hybrides physique + app + IA</p>
+<p style="margin-bottom:12px;color:var(--muted)"><span class="accent">—</span> Saturation des apps pures. Différenciation par continuité et gouvernance</p>
+<p style="color:var(--muted)"><span class="accent">—</span> Le noyau existe : 1 757 tests, vérifié en Coq, CI vert</p>
+</div>
+<div class="phrase-finale" style="margin:50px auto">Cette levée ne finance pas des lieux ni un concept ; elle finance <span class="accent">CONQUEST</span> comme produit, et <span class="blue">HELEN OS</span> comme moteur de différenciation, de rétention et d'exploitation.</div>
+<div class="mayor-badge">MAYOR VERDICT : SHIP</div>
+<div class="footer-tag">HELEN OS × CONQUEST — V3 CANONIQUE</div>
+</div>
+
+</body>
+</html>
