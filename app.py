@@ -40,8 +40,16 @@ from helen_os.temple import (
 app = Flask(__name__, static_folder="static")
 CORS(app)
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 BOOT_TIME = datetime.now(timezone.utc).isoformat()
+
+# ---------------------------------------------------------------------------
+# Intent Gateway — mandatory entry point (no raw input reaches kernel)
+# ---------------------------------------------------------------------------
+from helen_os.gateway import IntentGateway, enforce_proposal_type
+from helen_os.intents.classifier import classify_intent
+
+_GATEWAY = IntentGateway(executor=None)  # validation-only until wired to provider
 
 # ---------------------------------------------------------------------------
 # Provider configuration (non-sovereign layer)
@@ -754,6 +762,10 @@ def chat():
     # Temple routing classification
     routing_path, routing_key = get_routing_path(message)
 
+    # Intent classification (gateway integration)
+    intent_type = classify_intent(message)
+    _GATEWAY.process(message)  # log + metrics only (execution via provider above)
+
     return jsonify({
         "response": response_text,
         "provider": selected,
@@ -762,6 +774,10 @@ def chat():
         "elapsed_seconds": elapsed,
         "session_id": session_id,
         "authority": "NONE",
+        "intent": {
+            "type": intent_type,
+            "family": _get_intent_family(intent_type),
+        },
         "context": {
             "thread": ctx["packet"].get("thread", {}).get("title", ""),
             "tensions": [t["title"] for t in ctx.get("tensions", [])],
@@ -773,6 +789,60 @@ def chat():
             "roles": routing_path,
         },
         "note": "Provider output is non-sovereign. It does not constitute a decision.",
+    })
+
+
+def _get_intent_family(intent_type):
+    from helen_os.intents.schemas import WRITING_INTENTS, ANALYSIS_INTENTS, EXECUTION_INTENTS, STRATEGY_INTENTS
+    if intent_type in WRITING_INTENTS: return "writing"
+    if intent_type in ANALYSIS_INTENTS: return "analysis"
+    if intent_type in EXECUTION_INTENTS: return "execution"
+    if intent_type in STRATEGY_INTENTS: return "strategy"
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Gateway endpoints — intent processing + observability
+# ---------------------------------------------------------------------------
+
+@app.route("/gateway/process", methods=["POST"])
+def gateway_process():
+    """Process input through the mandatory intent gateway.
+    Returns typed intent classification, validation, and optional execution."""
+    data = request.get_json(silent=True) or {}
+    text = data.get("text", "").strip()
+    if not text:
+        return jsonify({"error": "Missing 'text' field"}), 400
+    result = _GATEWAY.process(text)
+    return jsonify(result)
+
+
+@app.route("/gateway/metrics")
+def gateway_metrics():
+    """Gateway metrics — classification, validation, and receipt rates."""
+    return jsonify({
+        "authority": "NONE",
+        "metrics": _GATEWAY.metrics.to_dict(),
+        "total_logs": len(_GATEWAY.logs),
+        "recent_intents": [
+            {"type": l.intent_type, "valid": l.valid, "executed": l.executed}
+            for l in _GATEWAY.logs[-10:]
+        ],
+    })
+
+
+@app.route("/gateway/classify", methods=["POST"])
+def gateway_classify():
+    """Classify input text into an intent type without executing."""
+    data = request.get_json(silent=True) or {}
+    text = data.get("text", "").strip()
+    if not text:
+        return jsonify({"error": "Missing 'text' field"}), 400
+    intent_type = classify_intent(text)
+    return jsonify({
+        "intent_type": intent_type,
+        "family": _get_intent_family(intent_type),
+        "authority": "NONE",
     })
 
 
