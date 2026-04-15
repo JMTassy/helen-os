@@ -1281,6 +1281,12 @@ def airi_client():
     return app.send_static_file("airi.html")
 
 
+@app.route("/pitch")
+def pitch():
+    """Serve the HELEN OS × CONQUEST investor pitch."""
+    return app.send_static_file("pitch.html")
+
+
 # ---------------------------------------------------------------------------
 # OpenAI-Compatible Shim — lets AIRI/any OpenAI client talk to HELEN
 # ---------------------------------------------------------------------------

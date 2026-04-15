@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HELEN OS × CONQUEST — Seed 2,75 M€</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --card: #1a1a25;
+  --border: #2a2a3a;
+  --text: #e6e6ef;
+  --muted: #8888aa;
+  --accent: #ff6b4a;
+  --accent2: #4da6ff;
+  --green: #3fb950;
+  --purple: #a855f7;
+  --gold: #d4a645;
+}
+body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+.container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+/* Hero */
+.hero { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; position: relative; overflow: hidden; }
+.hero::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(ellipse at 30% 50%, rgba(255,107,74,0.08) 0%, transparent 50%), radial-gradient(ellipse at 70% 50%, rgba(77,166,255,0.06) 0%, transparent 50%); animation: drift 20s ease-in-out infinite; }
+@keyframes drift { 0%,100% { transform: translate(0,0); } 50% { transform: translate(20px,-20px); } }
+.hero-content { position: relative; z-index: 1; }
+.hero h1 { font-size: clamp(2.5rem, 6vw, 4.5rem); font-weight: 900; line-height: 1.1; margin-bottom: 24px; }
+.hero h1 .accent { color: var(--accent); }
+.hero h1 .accent2 { color: var(--accent2); }
+.hero .subtitle { font-size: 1.25rem; color: var(--muted); max-width: 700px; margin-bottom: 40px; }
+.hero .numbers { display: flex; gap: 40px; flex-wrap: wrap; }
+.hero .num { text-align: center; }
+.hero .num .big { font-size: 2.5rem; font-weight: 900; color: var(--accent); display: block; }
+.hero .num .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; }
+
+/* Sections */
+section { padding: 100px 0; border-top: 1px solid var(--border); }
+section h2 { font-size: 2rem; font-weight: 700; margin-bottom: 40px; }
+section h2 .tag { font-size: 0.7rem; background: var(--accent); color: white; padding: 3px 10px; border-radius: 20px; vertical-align: middle; margin-left: 8px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* Cards */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 28px; transition: transform 0.2s, border-color 0.2s; }
+.card:hover { transform: translateY(-4px); border-color: var(--accent); }
+.card h3 { font-size: 1.1rem; margin-bottom: 8px; }
+.card p { color: var(--muted); font-size: 0.9rem; }
+.card .metric { font-size: 2rem; font-weight: 900; color: var(--accent); margin-bottom: 4px; }
+
+/* Table */
+table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+td { font-size: 0.95rem; }
+.highlight { color: var(--accent); font-weight: 700; }
+
+/* Timeline */
+.timeline { position: relative; padding-left: 40px; }
+.timeline::before { content: ''; position: absolute; left: 16px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+.timeline-item { position: relative; margin-bottom: 32px; }
+.timeline-item::before { content: ''; position: absolute; left: -28px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
+.timeline-item.done::before { background: var(--green); }
+.timeline-item .month { font-size: 0.8rem; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 4px; }
+.timeline-item h4 { font-size: 1rem; margin-bottom: 4px; }
+.timeline-item p { color: var(--muted); font-size: 0.85rem; }
+
+/* CTA */
+.cta-section { text-align: center; padding: 80px 0; }
+.cta-section h2 { font-size: 1.8rem; margin-bottom: 16px; }
+.cta-section .phrase { font-size: 1.1rem; color: var(--muted); max-width: 800px; margin: 0 auto 40px; font-style: italic; }
+.btn { display: inline-block; padding: 14px 32px; border-radius: 8px; font-weight: 700; font-size: 1rem; text-decoration: none; transition: transform 0.2s; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover { transform: scale(1.05); }
+.btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text); margin-left: 12px; }
+.btn-secondary:hover { border-color: var(--accent2); transform: scale(1.05); }
+
+/* Badge */
+.badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+.badge-green { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-purple { background: rgba(168,85,247,0.15); color: var(--purple); }
+.badge-gold { background: rgba(212,166,69,0.15); color: var(--gold); }
+
+/* Footer */
+.footer { padding: 40px 0; text-align: center; color: var(--muted); font-size: 0.8rem; border-top: 1px solid var(--border); }
+.footer .auth { font-style: italic; margin-top: 8px; }
+
+@media (max-width: 768px) {
+  .hero .numbers { gap: 20px; }
+  .card-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="container hero-content">
+    <h1><span class="accent">HELEN OS</span> × <span class="accent2">CONQUEST</span></h1>
+    <p class="subtitle">Un companion IA gouverné pour un jeu de civilisation persistent. Chaque décision est receipted. Chaque conflit est arbitré. Le contexte du joueur survit à l'interruption.</p>
+    <div class="numbers">
+      <div class="num"><span class="big">2,75M€</span><span class="label">Seed Round</span></div>
+      <div class="num"><span class="big">8 mois</span><span class="label">→ Autofinancement</span></div>
+      <div class="num"><span class="big">1 728</span><span class="label">Tests prouvés</span></div>
+      <div class="num"><span class="big">3 actifs</span><span class="label">Simultanés</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- PROBLEME -->
+<section>
+  <div class="container">
+    <h2>Le problème</h2>
+    <div class="card-grid">
+      <div class="card">
+        <h3>L'IA dans les jeux est une boîte noire</h3>
+        <p>Les NPCs hallucinent, l'état du jeu est opaque, les disputes n'ont aucun mécanisme de résolution.</p>
+      </div>
+      <div class="card">
+        <h3>Les companions IA oublient tout</h3>
+        <p>Fermez le navigateur, revenez demain — votre stratégie, vos alliances, votre contexte ont disparu.</p>
+      </div>
+      <div class="card">
+        <h3>Aucun jeu traite les décisions IA comme des artefacts</h3>
+        <p>$180B de marché gaming. $2.3B de companions IA. Zéro produit combine gouvernance + simulation + receipts.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SOLUTION -->
+<section>
+  <div class="container">
+    <h2>La solution <span class="tag">3 actifs</span></h2>
+    <div class="card-grid">
+      <div class="card" style="border-color: var(--accent);">
+        <span class="badge badge-green">MOTEUR</span>
+        <h3 style="margin-top:12px;">HELEN OS — Le substrat</h3>
+        <p>25 intents typés. 5 rôles Temple (AURA/HER/HAL/CHRONOS/MAYOR). Cascade de providers avec circuit breaker. Mémoire persistante. authority=NONE partout.</p>
+      </div>
+      <div class="card" style="border-color: var(--accent2);">
+        <span class="badge badge-purple">JEU</span>
+        <h3 style="margin-top:12px;">CONQUEST — Le monde</h3>
+        <p>Carte hex avec 7 états de territoire. Joute arbitrée par 9 gardes CHRONOS. Deck Oracle de 44 cartes. Ledger append-only. Fédérations multi-joueurs.</p>
+      </div>
+      <div class="card" style="border-color: var(--gold);">
+        <span class="badge badge-gold">LIEU</span>
+        <h3 style="margin-top:12px;">Le Gaming Bar — L'ancrage</h3>
+        <p>150-200 m² bar/gaming. Stations CONQUEST en réseau. Events, tournois, privatisations. Revenue F&B dès M5. Communauté physique.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TRACTION -->
+<section>
+  <div class="container">
+    <h2>Déjà construit <span class="tag">prouvé</span></h2>
+    <div class="card-grid">
+      <div class="card"><div class="metric">1 728</div><h3>Tests passants</h3><p>Noyau vérifié en Coq. CI vert. Pas un prototype — une infrastructure.</p></div>
+      <div class="card"><div class="metric">25</div><h3>Intents typés</h3><p>Chaque requête utilisateur est classifiée, validée et receipted avant exécution.</p></div>
+      <div class="card"><div class="metric" style="color:var(--accent2);">5 rôles</div><h3>Temple cognitif</h3><p>AURA (insight), HER (expansion), HAL (scepticisme), CHRONOS (continuité), MAYOR (readiness).</p></div>
+      <div class="card"><div class="metric" style="color:var(--green);">Live</div><h3>Avatar AIRI</h3><p>Live2D avatar avec streaming Ollama. District switching. Conversation persistante.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- MODELE ECONOMIQUE -->
+<section>
+  <div class="container">
+    <h2>Modèle économique</h2>
+    <table>
+      <tr><th>Source de revenu</th><th>Mécanisme</th><th>CA Year 1</th></tr>
+      <tr><td>Abonnements (9-99 €/mois)</td><td>5% conversion free→paid</td><td class="highlight">900 000 €</td></tr>
+      <tr><td>Oracle Deck (packs + trading)</td><td>2% achat × 8 €/pack</td><td>233 600 €</td></tr>
+      <tr><td>Tournois (entry fees)</td><td>52 tournois × 200 joueurs</td><td>156 000 €</td></tr>
+      <tr><td>F&B lieu physique</td><td>120 couverts/j × 6,25 €</td><td>247 500 €</td></tr>
+      <tr><td>API studio + consulting</td><td>15 studios + 6 missions</td><td>107 820 €</td></tr>
+      <tr><td><strong>Total</strong></td><td></td><td class="highlight"><strong>~1,83 M€</strong></td></tr>
+    </table>
+    <div class="card-grid" style="margin-top:20px;">
+      <div class="card"><div class="metric" style="color:var(--green);">75%+</div><h3>Marge brute</h3><p>Local-first via Ollama. Coût marginal joueur free = 0 €.</p></div>
+      <div class="card"><div class="metric">9x</div><h3>LTV / CAC</h3><p>CAC 3 € en ligne. LTV 180 € (12 mois avg).</p></div>
+      <div class="card"><div class="metric" style="color:var(--accent);">M8</div><h3>Autofinancement</h3><p>P&L canonique : 2,82 M€ CA → 41 K€ résultat net.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- BUDGET -->
+<section>
+  <div class="container">
+    <h2>Use of Funds — 2,75 M€</h2>
+    <table>
+      <tr><th>Poste</th><th>Montant</th><th>%</th></tr>
+      <tr><td><strong>BUILD</strong> (tech + jeu + IA)</td><td class="highlight">1 854 000 €</td><td>67%</td></tr>
+      <tr><td><strong>LAUNCH</strong> (marketing + communauté)</td><td>396 000 €</td><td>14%</td></tr>
+      <tr><td><strong>PHYSICAL</strong> (lieu + aménagement)</td><td>500 000 €</td><td>18%</td></tr>
+    </table>
+    <p style="color:var(--muted);margin-top:12px;">Dont 450 000 € sous-ventilés IA : kernel 120K, Temple 60K, Egregor 80K, avatar 70K, autonomous loop 40K, memory 30K, CHRONOS+Coq 30K, infra GPU 20K.</p>
+  </div>
+</section>
+
+<!-- ROADMAP -->
+<section>
+  <div class="container">
+    <h2>Roadmap — 8 gates binaires</h2>
+    <div class="timeline">
+      <div class="timeline-item done"><div class="month">Aujourd'hui</div><h4>Kernel HELEN OS prouvé</h4><p>1 728 tests, intent gateway, avatar AIRI, memory spine, Railway déployé.</p></div>
+      <div class="timeline-item"><div class="month">M1-M2</div><h4>Territoire + Oracle Deck</h4><p>Hex map, 7 états, 44 cartes. Gate : replay déterministe + 10 parties test.</p></div>
+      <div class="timeline-item"><div class="month">M3</div><h4>Joute + CHRONOS</h4><p>9 gardes intégrés. Gate : CI vert + 50 duels simulés.</p></div>
+      <div class="timeline-item"><div class="month">M4</div><h4>Alpha publique</h4><p>100 joueurs single-player. Gate : NPS ≥ 40.</p></div>
+      <div class="timeline-item"><div class="month">M5</div><h4>Ouverture du lieu</h4><p>Gaming bar opérationnel. Gate : 30 couverts/jour.</p></div>
+      <div class="timeline-item"><div class="month">M6</div><h4>Beta multijoueur</h4><p>1 000 joueurs, fédérations. Gate : churn < 20%.</p></div>
+      <div class="timeline-item"><div class="month">M7</div><h4>Paiement + marketplace</h4><p>Stripe live, Oracle marketplace. Gate : 500 transactions.</p></div>
+      <div class="timeline-item"><div class="month">M8</div><h4>Launch + autofinancement</h4><p>4 000 conn/j, API studio. Gate : autofinancement atteint.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- RISQUES -->
+<section>
+  <div class="container">
+    <h2>Risques & Mitigations</h2>
+    <div class="card-grid">
+      <div class="card">
+        <h3>Adoption trop lente</h3>
+        <p>Le lieu physique couvre les coûts fixes. Pivot B2B (API studio) si B2C insuffisant. Le noyau Coq est un actif vendable.</p>
+      </div>
+      <div class="card">
+        <h3>Réglementation IA (AI Act)</h3>
+        <p>HELEN est constitutionnellement transparent : authority=NONE, receipts, ledger append-only. Conforme par design — avantage, pas risque.</p>
+      </div>
+      <div class="card">
+        <h3>Concurrence AAA</h3>
+        <p>18 mois d'avance technique. Oracle Deck + CHRONOS guards = moat mécanique. Breveter la gouvernance par receipt.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="container">
+    <h2>La phrase</h2>
+    <p class="phrase">Cette levée de 2,75 M€ ne finance pas un pari : elle finance une thèse opérationnelle à 8 mois, avec compte d'exploitation canonique, reçus gouvernance HELEN, et trois actifs construits simultanément dont aucun n'existe seul sur le marché.</p>
+    <a href="mailto:jm@helen-os.com" class="btn btn-primary">Contacter JMT</a>
+    <a href="https://github.com/JMTassy/helen-os" class="btn btn-secondary">Voir le code (1 728 tests)</a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<div class="footer">
+  <div class="container">
+    <p>HELEN OS × CONQUEST — Jean-Marie Tassy — 2026</p>
+    <p class="auth">Authority = NONE — HELEN reste non-souveraine. La décision appartient aux fondateurs et aux investisseurs.</p>
+  </div>
+</div>
+
+</body>
+</html>
