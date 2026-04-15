@@ -597,6 +597,21 @@ def chat():
     # Call provider with context-augmented prompt (thread-safe, no global mutation)
     start = time.time()
     response_text, error = call_provider(selected, message, history, system_prompt=augmented_prompt)
+
+    # Fallback: if primary fails, try other configured providers
+    if error:
+        cascade = ["claude", "gpt", "gemma", "gemini", "grok", "qwen"]
+        for fallback in cascade:
+            if fallback == selected:
+                continue
+            key = PROVIDERS[fallback].get("env_key")
+            if key and os.environ.get(key):
+                response_text, error = call_provider(fallback, message, history, system_prompt=augmented_prompt)
+                if not error:
+                    selected = fallback
+                    cfg = PROVIDERS[selected]
+                    break
+
     elapsed = round(time.time() - start, 2)
 
     if error:
@@ -1085,7 +1100,7 @@ def openai_compat_chat():
     if history and history[-1]["role"] == "user":
         history.pop()
 
-    # Select provider and call
+    # Select provider and call (with fallback cascade)
     selected = select_provider(user_msg)
     if selected is None:
         return jsonify({
@@ -1093,6 +1108,20 @@ def openai_compat_chat():
         }), 503
     start = time.time()
     response_text, error = call_provider(selected, user_msg, history, system_prompt=system_prompt)
+
+    # Fallback: if primary fails, try other configured providers
+    if error:
+        cascade = ["claude", "gpt", "gemma", "gemini", "grok", "qwen"]
+        for fallback in cascade:
+            if fallback == selected:
+                continue
+            key = PROVIDERS[fallback].get("env_key")
+            if key and os.environ.get(key):
+                response_text, error = call_provider(fallback, user_msg, history, system_prompt=system_prompt)
+                if not error:
+                    selected = fallback
+                    break
+
     elapsed = round(time.time() - start, 2)
 
     if error:
