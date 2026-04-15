@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HELEN OS — Companion</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'SF Pro', -apple-system, sans-serif; background: #0d1117; color: #e6edf3; height: 100vh; display: flex; flex-direction: column; }
@@ -78,6 +80,11 @@ body.district-mayor     { --avatar-glow: #3fb950; --avatar-shadow: rgba(63,185,8
 .msg.user .bubble { background: #1f6feb; border-radius: 16px 16px 4px 16px; padding: 10px 14px; }
 .msg.assistant .bubble { background: #161b22; border: 1px solid #21262d; border-radius: 16px 16px 16px 4px; padding: 10px 14px; }
 .msg .meta { font-size: 11px; color: #484f58; margin-top: 4px; }
+.msg .bubble { word-wrap: break-word; overflow-wrap: break-word; }
+.msg .bubble pre { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 8px; overflow-x: auto; margin: 8px 0; }
+.msg .bubble code { font-family: 'SF Mono', monospace; font-size: 13px; }
+.msg .bubble p { margin: 4px 0; }
+.input-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
 .input-bar { padding: 12px 20px; border-top: 1px solid #21262d; display: flex; gap: 8px; }
 .input-bar input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; color: #e6edf3; font-size: 14px; outline: none; }
 .input-bar input:focus { border-color: #1f6feb; }
@@ -206,7 +213,16 @@ function switchDistrict(d, btn) {
 function addMessage(role, text, meta) {
   const div = document.createElement('div');
   div.className = `msg ${role}`;
-  div.innerHTML = `<div class="bubble">${text}</div>${meta ? `<div class="meta">${meta}</div>` : ''}`;
+  // Sanitize then render markdown for assistant, plain escape for user
+  let rendered;
+  if (role === 'assistant' && typeof marked !== 'undefined') {
+    rendered = DOMPurify.sanitize(marked.parse(text));
+  } else {
+    const tmp = document.createElement('span');
+    tmp.textContent = text;
+    rendered = tmp.innerHTML;
+  }
+  div.innerHTML = `<div class="bubble">${rendered}</div>${meta ? `<div class="meta">${meta}</div>` : ''}`;
   document.getElementById('messages').appendChild(div);
   document.getElementById('messages').scrollTop = 999999;
 }
@@ -221,6 +237,10 @@ async function sendMessage() {
   chatHistory.push({role: 'user', content: text});
 
   const model = currentDistrict === 'companion' ? 'helen' : `helen-${currentDistrict}`;
+  const sendBtn = document.querySelector('.input-bar button');
+  sendBtn.disabled = true;
+  sendBtn.textContent = '...';
+  input.disabled = true;
 
   // Avatar: thinking state
   avatar.classList.add('thinking');
@@ -257,6 +277,11 @@ async function sendMessage() {
     avatar.classList.remove('thinking');
     avatarLabel.textContent = currentDistrict;
     addMessage('assistant', `Connection error: ${e.message}`, 'error');
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Send';
+    input.disabled = false;
+    input.focus();
   }
 }
 

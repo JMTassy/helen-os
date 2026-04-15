@@ -369,12 +369,16 @@ def call_openai_compat(message, provider_key, history=None, system_prompt=None):
                 "messages": messages,
                 "max_tokens": 2048,
             },
-            timeout=120 if cfg.get("local") else 30,
+            timeout=60 if cfg.get("local") else 30,
         )
         data = resp.json()
         if "choices" in data and len(data["choices"]) > 0:
             return data["choices"][0]["message"]["content"], None
         return None, data.get("error", {}).get("message", "Unknown error")
+    except requests.Timeout:
+        return None, "TIMEOUT"
+    except requests.ConnectionError:
+        return None, "CONNECTION_ERROR"
     except Exception as e:
         return None, str(e)
 
@@ -543,14 +547,17 @@ def index():
 
 @app.route("/health")
 def health():
-    """Health check."""
+    """Health check — returns 503 if no providers configured."""
+    has_provider = select_provider("health") is not None
+    status_code = 200 if has_provider else 503
     return jsonify({
-        "status": "healthy",
+        "status": "healthy" if has_provider else "degraded",
+        "providers_available": has_provider,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "helen_initialized": True,
         "version": VERSION,
         "uptime_since": BOOT_TIME,
-    })
+    }), status_code
 
 
 @app.route("/status")
@@ -616,19 +623,28 @@ def chat():
     start = time.time()
     response_text, error = call_provider(selected, message, history, system_prompt=augmented_prompt)
 
-    # Fallback: if primary fails, try other configured providers
-    if error:
-        cascade = ["claude", "gpt", "gemma", "gemini", "grok", "qwen"]
+    # Fallback on auth/config errors only — don't cascade on timeouts
+    if error and error not in ("TIMEOUT", "CONNECTION_ERROR"):
+        cascade = ["ollama", "claude", "gpt", "gemma", "gemini", "grok", "qwen"]
         for fallback in cascade:
             if fallback == selected:
                 continue
             key = PROVIDERS[fallback].get("env_key")
-            if key and os.environ.get(key):
-                response_text, error = call_provider(fallback, message, history, system_prompt=augmented_prompt)
-                if not error:
-                    selected = fallback
-                    cfg = PROVIDERS[selected]
-                    break
+            if key is None:
+                if PROVIDERS[fallback].get("local"):
+                    try:
+                        requests.get("http://localhost:11434/api/tags", timeout=1)
+                    except Exception:
+                        continue
+            elif not os.environ.get(key):
+                continue
+            response_text, error = call_provider(fallback, message, history, system_prompt=augmented_prompt)
+            if not error:
+                selected = fallback
+                cfg = PROVIDERS[selected]
+                break
+            if error in ("TIMEOUT", "CONNECTION_ERROR"):
+                break
 
     elapsed = round(time.time() - start, 2)
 
@@ -1081,6 +1097,13 @@ def openai_compat_chat():
     messages = data.get("messages", [])
     model = data.get("model", "helen")
 
+    # Validate messages structure
+    if not isinstance(messages, list):
+        return jsonify({"error": {"message": "messages must be an array", "type": "invalid_request"}}), 400
+
+    # Filter out system role from user input (prevent prompt injection)
+    messages = [m for m in messages if isinstance(m, dict) and m.get("role") in ("user", "assistant")]
+
     # Extract user message (last user message)
     user_msg = ""
     for m in reversed(messages):
@@ -1089,7 +1112,7 @@ def openai_compat_chat():
             break
 
     if not user_msg:
-        return jsonify({"error": "No user message found"}), 400
+        return jsonify({"error": {"message": "No user message found", "type": "invalid_request"}}), 400
 
     # Map model name to district/mode for persona routing
     mode_map = {
@@ -1127,18 +1150,28 @@ def openai_compat_chat():
     start = time.time()
     response_text, error = call_provider(selected, user_msg, history, system_prompt=system_prompt)
 
-    # Fallback: if primary fails, try other configured providers
-    if error:
-        cascade = ["claude", "gpt", "gemma", "gemini", "grok", "qwen"]
+    # Fallback: if primary fails on auth/config errors, try next provider
+    # Don't retry on timeouts (would compound latency)
+    if error and error not in ("TIMEOUT", "CONNECTION_ERROR"):
+        cascade = ["ollama", "claude", "gpt", "gemma", "gemini", "grok", "qwen"]
         for fallback in cascade:
             if fallback == selected:
                 continue
             key = PROVIDERS[fallback].get("env_key")
-            if key and os.environ.get(key):
-                response_text, error = call_provider(fallback, user_msg, history, system_prompt=system_prompt)
-                if not error:
-                    selected = fallback
-                    break
+            if key is None:
+                if PROVIDERS[fallback].get("local"):
+                    try:
+                        requests.get("http://localhost:11434/api/tags", timeout=1)
+                    except Exception:
+                        continue
+            elif not os.environ.get(key):
+                continue
+            response_text, error = call_provider(fallback, user_msg, history, system_prompt=system_prompt)
+            if not error:
+                selected = fallback
+                break
+            if error in ("TIMEOUT", "CONNECTION_ERROR"):
+                break  # Don't cascade further on timeouts
 
     elapsed = round(time.time() - start, 2)
 

@@ -90,6 +90,12 @@ CREATE TABLE IF NOT EXISTS mutation_log (
     prev_hash   TEXT NOT NULL,
     hash        TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_threads_status ON threads(status);
+CREATE INDEX IF NOT EXISTS idx_threads_memory_class ON threads(memory_class);
+CREATE INDEX IF NOT EXISTS idx_corpus_superseded ON corpus(superseded_by);
+CREATE INDEX IF NOT EXISTS idx_memory_items_class ON memory_items(memory_class, active);
+CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id);
 """
 
 # Salience & Stance weights (for ranking)
@@ -108,6 +114,8 @@ def _connect():
 def init_db():
     """Initialize the database schema. Idempotent."""
     conn = _connect()
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.executescript(SCHEMA)
     conn.commit()
     conn.close()
