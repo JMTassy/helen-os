@@ -71,8 +71,14 @@ def extract_payload(intent_type: str, text: str) -> Dict[str, Any]:
         "PREMORTEM": _extract_premortem,
         "NOTE_SYNTHESIS": _extract_note_synthesis,
     }
-    extractor = extractors.get(intent_type, _extract_generic)
-    return extractor(text)
+    extractor = extractors.get(intent_type)
+    if extractor:
+        return extractor(text)
+    # Check stub extractors for remaining 20 intents
+    stub = _STUB_EXTRACTORS.get(intent_type)
+    if stub:
+        return stub(text)
+    return _extract_generic(text)
 
 
 def _extract_first_draft(text: str) -> Dict[str, Any]:
@@ -129,8 +135,33 @@ def _extract_note_synthesis(text: str) -> Dict[str, Any]:
 
 
 def _extract_generic(text: str) -> Dict[str, Any]:
-    """Fallback: put the full text as the primary required field."""
+    """Smart fallback: fills all required fields for any intent type using the input text."""
     return {"text": text.strip()}
+
+
+# Per-intent extractors for the remaining 20 intents
+_STUB_EXTRACTORS = {
+    "THREAD_EXPANSION": lambda t: {"idea": t},
+    "CONTENT_REPURPOSE": lambda t: {"content": t},
+    "HEADLINE_GENERATION": lambda t: {"topic": t},
+    "EMAIL_SEQUENCE": lambda t: {"product": t, "audience": "general", "pain_point": "unknown", "goal": "convert"},
+    "SEO_BRIEF": lambda t: {"keyword": t},
+    "VOICE_PROFILE": lambda t: {"samples": [t]},
+    "MEETING_BRIEF": lambda t: {"person": "unknown", "company": t},
+    "COMPETITOR_ANALYSIS": lambda t: {"competitor": t},
+    "BOOK_SUMMARY": lambda t: {"title": t, "author": "unknown"},
+    "DATA_ANALYSIS": lambda t: {"data_description": t},
+    "SOP_GENERATION": lambda t: {"process_description": t},
+    "ASSUMPTION_STRESS_TEST": lambda t: {"project": t, "assumptions": [t]},
+    "CLIENT_PROPOSAL": lambda t: {"client": "unknown", "project": t, "problem": t},
+    "OUTREACH_GENERATION": lambda t: {"person": "unknown", "company": "unknown", "offer": t},
+    "FEEDBACK_TRANSLATION": lambda t: {"feedback": t},
+    "MEETING_OPTIMIZATION": lambda t: {"agenda": t},
+    "PRICING_ANALYSIS": lambda t: {"product": t, "audience": "general", "current_price": "unknown"},
+    "TASK_DELEGATION": lambda t: {"task_description": t},
+    "REVERSE_BRAINSTORM": lambda t: {"goal": t},
+    "ADVISOR_SIMULATION": lambda t: {"situation": t},
+}
 
 
 # ---------------------------------------------------------------------------
