@@ -15,6 +15,12 @@ import hashlib
 import time
 from datetime import datetime, timezone
 
+# Bootstrap env vars (temporary — move to Railway Variables and delete railway_env.py)
+try:
+    import railway_env  # noqa: F401
+except ImportError:
+    pass
+
 print(f"[HELEN BOOT] Python {sys.version}", flush=True)
 print(f"[HELEN BOOT] CWD: {os.getcwd()}", flush=True)
 print(f"[HELEN BOOT] PORT: {os.environ.get('PORT', 'not set')}", flush=True)
