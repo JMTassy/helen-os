@@ -49,7 +49,23 @@ BOOT_TIME = datetime.now(timezone.utc).isoformat()
 from helen_os.gateway import IntentGateway, enforce_proposal_type
 from helen_os.intents.classifier import classify_intent
 
-_GATEWAY = IntentGateway(executor=None)  # validation-only until wired to provider
+def _gateway_executor(proposal, payload):
+    """Execute an intent through the best available provider. Lazy-bound."""
+    message = proposal.get("source_input", "")
+    if not message:
+        return None, "No source_input in proposal"
+    # select_provider and call_provider defined later in this file — works because
+    # this function is called at request time, not import time
+    selected = select_provider(message)
+    if not selected:
+        return None, "No provider available"
+    system_prompt = build_district_prompt("companion")
+    result, error = call_provider(selected, message, system_prompt=system_prompt)
+    if error:
+        return None, error
+    return {"response": result, "provider": selected, "intent_type": proposal.get("intent_type")}, None
+
+_GATEWAY = IntentGateway(executor=_gateway_executor)
 
 # ---------------------------------------------------------------------------
 # Provider configuration (non-sovereign layer)
@@ -1678,6 +1694,16 @@ def init_live():
     last_session = get_last_closed_session()
     committed = get_memory_items(memory_class="committed", limit=5)
 
+    # Session continuity — load last chained MemoryPacket if available
+    continuity_context = None
+    try:
+        from helen_os.session_continuity import open_session_from_chain
+        ctx, valid, err = open_session_from_chain()
+        if valid and ctx:
+            continuity_context = ctx
+    except Exception:
+        pass  # graceful degradation
+
     # Tensions: threads with unresolved items
     tensions = [
         {"thread": t["title"], "issue": t["unresolved"]}
@@ -1718,6 +1744,14 @@ def init_live():
         output_lines.append(f"LAST SESSION: {last_session.get('summary', 'No summary')}")
         output_lines.append("")
 
+    # Session continuity chain
+    if continuity_context:
+        output_lines.append(f"CONTINUITY: verified chain from {continuity_context.get('previous_session', 'genesis')}")
+        prev_next = continuity_context.get("next_action", "")
+        if prev_next:
+            output_lines.append(f"  Previous next action: {prev_next}")
+        output_lines.append("")
+
     output_lines.append("authority: NONE")
 
     return "\n".join(output_lines), 200, {"Content-Type": "text/plain; charset=utf-8"}
@@ -1745,26 +1779,27 @@ def seed_working_context():
 
     # --- Threads ---
     threads = [
-        ("helen-os-api", "HELEN OS Public API", "committed",
-         "19 endpoints live on Railway", None, "Add ANTHROPIC_API_KEY to Railway Variables"),
-        ("helen-memory-spine", "Memory Spine + Three Classes", "committed",
-         "SQLite with corpus, threads, memory_items, sessions, mutation_log",
-         None, "Migrate to persistent storage (Railway volume or Postgres)"),
-        ("airi-companion", "AIRI Companion Client", "committed",
-         "Browser client at /airi with context drawer + district switching",
-         None, "Connect local AIRI to Railway endpoint"),
+        ("helen-os-kernel", "HELEN OS Kernel", "committed",
+         "1776 tests, intent gateway, memory hydration, session continuity, autonomous loop",
+         None, "Wire session continuity into /init production path"),
+        ("helen-memory", "Memory + Session Continuity", "committed",
+         "Memory Hydration V1 (T1-T4 proven) + multi-session replay with chained packets",
+         None, "Run 7-day wedge test with real session chains"),
+        ("helen-intent-gateway", "Intent Gateway (25 types)", "committed",
+         "Mandatory gateway: classify → extract → govern → execute → receipt. Kill switch armed.",
+         None, "Wire gateway executor to Ollama for real receipted chat"),
+        ("conquest-business-plan", "CONQUEST Business Plan V4", "working",
+         "V4 MAYOR SHIP with 5 TEMPLE breakthroughs. Reconciled with prévisionnel.",
+         "Investor meetings not yet scheduled", "Present V4 to first investors"),
         ("conquest-oracle-town", "CONQUEST Oracle Town", "working",
-         "44-card Oracle deck, 9 CHRONOS guards, territory/joute/federation",
-         "Formal verification of guard properties", "Continue Coq proofs"),
-        ("autoresearch", "Autoresearch Campaign", "working",
-         "E1-E23 complete, 262+ tests, failure taxonomy, representation v2",
-         "Context store architecture", "Design E24 epoch"),
-        ("temple-doctrine", "Temple Five-Role Architecture", "committed",
-         "AURA/HER/HAL/CHRONOS/MAYOR, all authority=NONE",
-         None, "Integrate Temple routing into chat responses"),
+         "44-card Oracle deck, 9 CHRONOS guards, Coq CI green",
+         "Territory engine not yet built", "Build territory hex map MVP"),
+        ("airi-avatar", "AIRI Live2D Avatar", "committed",
+         "Live2D at localhost:5173 with real Ollama streaming via kernel at 8780",
+         None, "Deploy AIRI to Railway or Vercel"),
         ("product-wedge", "Product Wedge: /init beats notes", "working",
-         "7-day test period starting", None,
-         "Use HELEN daily, compare /init vs notes after interruption"),
+         "Memory hydration + session continuity built. Wedge test not yet run.",
+         "Need 3 real sessions to validate", "Use HELEN for real work, close sessions, test /init cold"),
     ]
     for tid, title, mc, state, unresolved, next_act in threads:
         create_thread(tid, title, memory_class=mc, current_state=state,
