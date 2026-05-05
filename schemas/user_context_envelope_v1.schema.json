@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "USER_CONTEXT_ENVELOPE_V1",
+  "type": "object",
+  "required": [
+    "promotion_status",
+    "uncertainty_flags"
+  ],
+  "properties": {
+    "local_time": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "timezone": {
+      "type": ["string", "null"]
+    },
+    "account_label": {
+      "type": ["string", "null"]
+    },
+    "preferred_name": {
+      "type": ["string", "null"]
+    },
+    "preferred_name_status": {
+      "type": "string",
+      "enum": ["UNKNOWN", "CANDIDATE", "OBSERVED", "CONFIRMED", "DURABLE"]
+    },
+    "identity_hint": {
+      "type": ["string", "null"]
+    },
+    "language_preference": {
+      "type": ["string", "null"]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "uncertainty_flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "promotion_status": {
+      "type": "string",
+      "enum": ["ADVISORY", "OBSERVED", "CONFIRMED", "DURABLE"]
+    }
+  },
+  "additionalProperties": false
+}
